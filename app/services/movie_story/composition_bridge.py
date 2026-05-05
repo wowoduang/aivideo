@@ -287,7 +287,7 @@ def build_movie_story_composition_plan(
         cursor += duration
 
     plan_metadata = {
-        "source_pipeline": "subtitle_first_pipeline",
+        "source_pipeline": "movie_story_native_engine",
         "composition_bridge_stage": "stage_m",
         "selected_clip_count": len(segments),
         "script_item_count": len(script_items or []),

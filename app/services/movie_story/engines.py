@@ -2,7 +2,7 @@
 
 Stage-R adds production-safe native rollout behavior:
 
-- movie_story still resolves to legacy by default
+- movie_story resolves to native in auto mode
 - highlight_edit resolves to native in auto mode
 - auto-selected native failures fall back to legacy
 - explicit native requests expose native failures instead of hiding them

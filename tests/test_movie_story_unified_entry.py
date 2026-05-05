@@ -81,7 +81,7 @@ def test_run_movie_story_request_uses_task_output_path_and_returns_unified_metad
 
     result = unified_entry.run_unified_edit_request(
         entry="movie_story_script",
-        request={"video_path": "demo.mp4", "video_theme": "Demo", "cache_mode": "reuse"},
+        request={"video_path": "demo.mp4", "video_theme": "Demo", "cache_mode": "reuse", "engine_backend": "legacy"},
         output_script_path="E:/tmp/movie_story_script.json",
     )
 

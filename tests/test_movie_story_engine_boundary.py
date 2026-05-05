@@ -7,15 +7,15 @@ from app.services.movie_story import engine_policy
 from app.services.movie_story.engines import run_highlight_edit_engine, run_movie_story_engine
 
 
-def test_movie_story_policy_auto_defaults_to_legacy():
+def test_movie_story_policy_auto_defaults_to_native():
     decision = engine_policy.decide_engine_backend(
         engine_kind=engine_policy.ENGINE_KIND_MOVIE_STORY,
         requested_backend="auto",
         compatibility_engine="subtitle_first_pipeline",
     )
-    assert decision.selected_backend == engine_policy.BACKEND_LEGACY
-    assert decision.native_ready is False
-    assert decision.reason == "auto_fallback_legacy_until_native_ready"
+    assert decision.selected_backend == engine_policy.BACKEND_NATIVE
+    assert decision.native_ready is True
+    assert decision.reason == "auto_selected_native"
 
 
 def test_highlight_policy_auto_defaults_to_native():

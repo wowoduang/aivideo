@@ -96,9 +96,9 @@ def backend_from_kwargs(kwargs: Mapping[str, Any], *, engine_kind: str) -> str:
 def native_ready_for(engine_kind: str) -> bool:
     """Return whether a native engine is ready for production use."""
 
-    # Stage-Q promotes highlight_edit to the first native backend.
-    # Movie-story narration remains on legacy until its parity path is ready.
-    return engine_kind == ENGINE_KIND_HIGHLIGHT_EDIT
+    # Final migration promotes both product engines to native entry points.
+    # Legacy engines remain as fallback for auto mode and explicit compatibility.
+    return engine_kind in {ENGINE_KIND_HIGHLIGHT_EDIT, ENGINE_KIND_MOVIE_STORY}
 
 
 def decide_engine_backend(

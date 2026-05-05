@@ -118,6 +118,9 @@ def run_highlight_request(
         visual_mode=str(request.get("visual_mode", "auto") or "auto"),
         regenerate_subtitle=bool(request.get("regenerate_subtitle", False)),
         subtitle_backend=str(request.get("subtitle_backend", "") or ""),
+        engine_backend=str(request.get("engine_backend", "") or ""),
+        edit_engine_backend=str(request.get("edit_engine_backend", "") or ""),
+        highlight_engine_backend=str(request.get("highlight_engine_backend", "") or ""),
         progress_callback=progress_callback,
     )
 
@@ -146,6 +149,8 @@ def run_movie_story_request(
         progress_callback=progress_callback,
         asr_backend=str(request.get("asr_backend", "") or ""),
         regenerate_subtitle=regenerate_subtitle,
+        engine_backend=str(request.get("engine_backend", "") or ""),
+        movie_story_engine_backend=str(request.get("movie_story_engine_backend", "") or ""),
     )
 
 

@@ -103,7 +103,7 @@ def resolve_unified_mode(entry: str, request: Dict[str, Any]) -> UnifiedEditMode
 
 
 def engine_mode_for_highlight(normalized_mode: str) -> str:
-    """Return the mode currently accepted by highlight_edit_pipeline."""
+    """Return the canonical mode accepted by highlight edit engines."""
 
     if normalized_mode == RAW_HIGHLIGHT:
         return HIGHLIGHT_RECUT

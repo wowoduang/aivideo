@@ -73,14 +73,14 @@ def test_highlight_policy_auto_now_selects_native():
     assert decision.native_ready is True
 
 
-def test_movie_story_policy_still_uses_legacy():
+def test_movie_story_policy_now_selects_native():
     decision = engine_policy.decide_engine_backend(
         engine_kind=engine_policy.ENGINE_KIND_MOVIE_STORY,
         requested_backend="auto",
         compatibility_engine="subtitle_first_pipeline",
     )
-    assert decision.selected_backend == engine_policy.BACKEND_LEGACY
-    assert decision.native_ready is False
+    assert decision.selected_backend == engine_policy.BACKEND_NATIVE
+    assert decision.native_ready is True
 
 
 def test_native_highlight_engine_runs_without_legacy_pipeline(monkeypatch):

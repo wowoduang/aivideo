@@ -12,6 +12,7 @@ __all__ = [
     "movie_story_scene_overrides_from_request",
     "run_movie_story_engine",
     "run_highlight_edit_engine",
+    "get_engine_status",
 ]
 
 
@@ -32,4 +33,9 @@ def __getattr__(name: str):
         if name == "run_movie_story_engine":
             return run_movie_story_engine
         return run_highlight_edit_engine
+
+    if name == "get_engine_status":
+        from .engine_status import get_engine_status
+
+        return get_engine_status
     raise AttributeError(name)
