@@ -1,0 +1,134 @@
+{
+  "global": {
+    "score": 1.0,
+    "present": [
+      "main_conflict",
+      "main_characters",
+      "story_theme",
+      "timeline_summary",
+      "genre"
+    ],
+    "missing": [],
+    "passed": true
+  },
+  "evidence": {
+    "total": 32,
+    "passed": 32,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "overall_passed": true,
+    "top_missing_required": []
+  },
+  "sample": {
+    "idx": 1,
+    "id": "highlight_001",
+    "start": 179.36,
+    "end": 186.08,
+    "duration": 6.72,
+    "timestamp": "00:02:59,360-00:03:06,080",
+    "candidate_type": "highlight",
+    "selected": true,
+    "drop_reason": null,
+    "plot_function": "信息揭露",
+    "score": 0.378,
+    "highlight_score": 0.378,
+    "story_score": 0.82,
+    "character_score": 0.3,
+    "information_score": 0.05,
+    "emotion_score": 0.05,
+    "visual_score": 0.25,
+    "audio_score": 0.05,
+    "continuity_score": 0.7,
+    "penalty": 0.0,
+    "children_count": 0,
+    "boundary_start_reason": "[]",
+    "boundary_end_reason": "[]",
+    "reasons": "[\"剧情推进:信息揭露\", \"存在人物线索\"]",
+    "text": "诺，皇上，再过两个月可臣妾的生日了",
+    "subtitle_text": "诺，皇上，再过两个月可臣妾的生日了",
+    "main_text_evidence": "诺，皇上，再过两个月可臣妾的生日了",
+    "surface_dialogue_meaning": "宫廷内部仍在关注排场和需求，与外部危机形成反差。",
+    "real_narrative_state": "宫廷享乐需求与财政危机形成反差，强化了权力层和民间处境的不对等。",
+    "conflict_summary": "上位者的要求和执行者面对的现实压力出现冲突。",
+    "character_motivation": "掌权者急于解决眼前压力，倾向用命令推进局面。",
+    "story_function": "补充观众理解剧情所需的关键信息",
+    "importance_level": "high",
+    "emotion_hint": "反差/讽刺",
+    "local_understanding": {
+      "surface_dialogue_meaning": "宫廷内部仍在关注排场和需求，与外部危机形成反差。",
+      "real_narrative_state": "宫廷享乐需求与财政危机形成反差，强化了权力层和民间处境的不对等。",
+      "conflict_summary": "上位者的要求和执行者面对的现实压力出现冲突。",
+      "character_motivation": "掌权者急于解决眼前压力，倾向用命令推进局面。",
+      "story_function": "补充观众理解剧情所需的关键信息",
+      "plot_function": "信息揭露",
+      "importance_level": "high",
+      "emotion": "反差/讽刺",
+      "core_event": "宫廷享乐需求与财政危机形成反差，强化了权力层和民间处境的不对等。"
+    },
+    "_global_summary": {
+      "migration_stage": "stage_a_global_local_evidence",
+      "global_story_context_ready": true,
+      "video_title": "",
+      "genre": "历史宫廷/王朝权力",
+      "main_conflict": "权力财政需求与民间生存困境之间的矛盾持续升级。",
+      "story_theme": "权力、财政压力与底层生存之间的冲突。",
+      "main_characters": [
+        "皇上",
+        "皇帝",
+        "大臣",
+        "钦差",
+        "朱重八"
+      ],
+      "timeline_summary": [
+        "民间灾荒与催税压力正面碰撞。",
+        "朝廷财政吃紧，钱粮危机浮出水面。",
+        "皇帝安排臣子承担催税任务，朝廷压力开始向外传导。",
+        "今天收取至+38年税赋 韩爷您到了，别给我打哈哈 韩爷您到了，别给我打哈哈 来来，上茶 你看从哪一家开始 就从村东头开始收 第一家，朱五四 怎么叫这怪名",
+        "还有更怪的呢 这朱五四，特别能下崽，一共下了7~8个，从重一、重二、重三、重四一直到重八 几口人呢 重一、 重三、 重四、 重五、 重六、 重七， 全都给饿死了， 就剩下重二跟重八了 朱重八 朱重八， 上承天道， 下顺人心， 即位开渊， 敕",
+        "咱把这些大青石，送到咱的龙椅 龙椅。咱把这片山坳，做做咱的皇宫宝殿 龙椅。咱把这片山坳，做做咱的皇宫宝殿 怎么搞？我怎么什么都没看见呀 放肆 君子无戏言，咱说有那有 宣达听旨， 末将在， 咱把刘施主家的大闺女赏给你做老婆， 末将 宣达听旨，"
+      ],
+      "relationship_map": [],
+      "risk_flags": [],
+      "full_subtitle_understanding": {},
+      "migration_quality": {
+        "score": 1.0,
+        "present": [
+          "main_conflict",
+          "main_characters",
+          "story_theme",
+          "timeline_summary",
+          "genre"
+        ],
+        "missing": [],
+        "passed": true
+      }
+    },
+    "raw_voice_retain_suggestion": false,
+    "narration_intent": {
+      "intent": "这一段要讲：宫廷享乐需求与财政危机形成反差，强化了权力层和民间处境的不对等。；剧情功能：补充观众理解剧情所需的关键信息；核心冲突：上位者的要求和执行者面对的现实压力出现冲突。",
+      "must_explain": [
+        "上位者的要求和执行者面对的现实压力出现冲突。",
+        "掌权者急于解决眼前压力，倾向用命令推进局面。",
+        "补充观众理解剧情所需的关键信息",
+        "信息揭露"
+      ],
+      "avoid": [
+        "逐句复述字幕",
+        "只写某人说了什么",
+        "脱离当前时间窗提前剧透"
+      ],
+      "evidence_role": "信息揭露"
+    },
+    "evidence_completeness": {
+      "score": 0.92,
+      "required_score": 1.0,
+      "recommended_score": 0.6,
+      "missing_required": [],
+      "missing_recommended": [
+        "story_validation",
+        "raw_voice_retain_suggestion"
+      ],
+      "passed": true
+    }
+  }
+}

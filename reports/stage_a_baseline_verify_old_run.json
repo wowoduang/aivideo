@@ -1,0 +1,46 @@
+{
+  "stage": "stage_a_global_local_evidence",
+  "source": "/mnt/data/run_latest/run_20260502_180430",
+  "overall_passed": false,
+  "checks": {
+    "global_context_ready": false,
+    "evidence_stage_present": false,
+    "required_evidence_pass_rate": 0.0,
+    "required_evidence_target": 0.9,
+    "required_fields": [
+      "subtitle_text",
+      "surface_dialogue_meaning",
+      "real_narrative_state",
+      "conflict_summary",
+      "character_motivation",
+      "story_function",
+      "plot_function",
+      "importance_level",
+      "narration_intent",
+      "_global_summary"
+    ]
+  },
+  "global_context": {
+    "passed": false,
+    "missing": [
+      "04_global_story_context"
+    ],
+    "main_conflict": "",
+    "genre": ""
+  },
+  "evidence_completeness": {
+    "stage": "stage_a_global_local_evidence",
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "pass_rate": 0.0,
+    "target_pass_rate": 0.9,
+    "overall_passed": false,
+    "top_missing_required": [],
+    "items": []
+  },
+  "next_targets": [
+    "补齐 04_global_story_context：main_conflict / story_theme / genre / main_characters / timeline_summary",
+    "生成 06_scene_evidence_for_narration 审计产物"
+  ]
+}

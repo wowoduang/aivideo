@@ -1,0 +1,744 @@
+{
+  "stage": "stage_b_highlight_planning_contract",
+  "source": "/mnt/data/audit_stageb_replay/run_20260503_000754",
+  "overall_passed": true,
+  "checks": {
+    "stage_a_prerequisite_passed": true,
+    "highlight_planning_stage_present": true,
+    "evidence_stage_present": true,
+    "highlight_contract_pass_rate": 1.0,
+    "highlight_contract_target": 0.9,
+    "highlight_type_count": 7,
+    "highlight_type_min": 3,
+    "highlight_arc_count": 4,
+    "highlight_arc_min": 3,
+    "evidence_contract_pass_rate": 1.0,
+    "required_highlight_fields": [
+      "highlight_id",
+      "start",
+      "end",
+      "subtitle_text",
+      "highlight_type",
+      "story_role",
+      "selection_reason",
+      "score_breakdown",
+      "source_scene_ids",
+      "narration_intent",
+      "_global_summary"
+    ],
+    "required_narration_input_fields": [
+      "highlight_id",
+      "time_window",
+      "subtitle_text",
+      "global_summary",
+      "local_understanding",
+      "story_function",
+      "selection_reason",
+      "narration_intent",
+      "char_budget"
+    ]
+  },
+  "stage_a_prerequisite": {
+    "overall_passed": true
+  },
+  "highlight_planning": {
+    "stage": "stage_b_highlight_planning_contract",
+    "total": 32,
+    "passed": 32,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "target_pass_rate": 0.9,
+    "type_count": 7,
+    "min_type_count": 3,
+    "arc_count": 4,
+    "min_arc_count": 3,
+    "overall_passed": true,
+    "items": [
+      {
+        "idx": 1,
+        "id": "highlight_001",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "开场钩子",
+        "arc": "opening_hook"
+      },
+      {
+        "idx": 2,
+        "id": "highlight_002",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 3,
+        "id": "highlight_003",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 4,
+        "id": "highlight_004",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 5,
+        "id": "highlight_005",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 6,
+        "id": "highlight_006",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 7,
+        "id": "highlight_007",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 8,
+        "id": "highlight_008",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 9,
+        "id": "highlight_009",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "悬念伏笔",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 10,
+        "id": "highlight_010",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 11,
+        "id": "highlight_011",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "冲突升级",
+        "story_role": "主线冲突推进",
+        "arc": "conflict_escalation"
+      },
+      {
+        "idx": 12,
+        "id": "highlight_012",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "主线冲突推进",
+        "arc": "conflict_escalation"
+      },
+      {
+        "idx": 13,
+        "id": "highlight_013",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 14,
+        "id": "highlight_014",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 15,
+        "id": "highlight_015",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "悬念伏笔",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 16,
+        "id": "highlight_016",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "悬念伏笔",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 17,
+        "id": "highlight_017",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "动作视觉场面",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 18,
+        "id": "highlight_018",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "主线冲突推进",
+        "arc": "conflict_escalation"
+      },
+      {
+        "idx": 19,
+        "id": "highlight_019",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 20,
+        "id": "highlight_020",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "动作视觉场面",
+        "story_role": "主线冲突推进",
+        "arc": "conflict_escalation"
+      },
+      {
+        "idx": 21,
+        "id": "highlight_021",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "冲突升级",
+        "story_role": "主线冲突推进",
+        "arc": "conflict_escalation"
+      },
+      {
+        "idx": 22,
+        "id": "highlight_022",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "冲突升级",
+        "story_role": "主线冲突推进",
+        "arc": "conflict_escalation"
+      },
+      {
+        "idx": 23,
+        "id": "highlight_023",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 24,
+        "id": "highlight_024",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 25,
+        "id": "highlight_025",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "任务目标确立",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 26,
+        "id": "highlight_026",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "情绪爆发",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 27,
+        "id": "highlight_027",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "人物关系变化",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 28,
+        "id": "highlight_028",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 29,
+        "id": "highlight_029",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "任务目标确立",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 30,
+        "id": "highlight_030",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "冲突升级",
+        "story_role": "主线冲突推进",
+        "arc": "conflict_escalation"
+      },
+      {
+        "idx": 31,
+        "id": "highlight_031",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "关键信息揭露",
+        "arc": "information_reveal"
+      },
+      {
+        "idx": 32,
+        "id": "highlight_032",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_narration_input": [],
+        "highlight_type": "信息揭露",
+        "story_role": "阶段收束",
+        "arc": "ending_resolution"
+      }
+    ]
+  },
+  "evidence_completeness": {
+    "stage": "stage_a_global_local_evidence",
+    "total": 32,
+    "passed": 32,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "target_pass_rate": 0.9,
+    "overall_passed": true,
+    "top_missing_required": [],
+    "items": [
+      {
+        "idx": 1,
+        "id": "highlight_001",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 2,
+        "id": "highlight_002",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 3,
+        "id": "highlight_003",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 4,
+        "id": "highlight_004",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 5,
+        "id": "highlight_005",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 6,
+        "id": "highlight_006",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 7,
+        "id": "highlight_007",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 8,
+        "id": "highlight_008",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 9,
+        "id": "highlight_009",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 10,
+        "id": "highlight_010",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 11,
+        "id": "highlight_011",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 12,
+        "id": "highlight_012",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 13,
+        "id": "highlight_013",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 14,
+        "id": "highlight_014",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 15,
+        "id": "highlight_015",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 16,
+        "id": "highlight_016",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 17,
+        "id": "highlight_017",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 18,
+        "id": "highlight_018",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 19,
+        "id": "highlight_019",
+        "score": 1.0,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": []
+      },
+      {
+        "idx": 20,
+        "id": "highlight_020",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 21,
+        "id": "highlight_021",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 22,
+        "id": "highlight_022",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 23,
+        "id": "highlight_023",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 24,
+        "id": "highlight_024",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 25,
+        "id": "highlight_025",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 26,
+        "id": "highlight_026",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 27,
+        "id": "highlight_027",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 28,
+        "id": "highlight_028",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 29,
+        "id": "highlight_029",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 30,
+        "id": "highlight_030",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 31,
+        "id": "highlight_031",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      },
+      {
+        "idx": 32,
+        "id": "highlight_032",
+        "score": 0.96,
+        "passed": true,
+        "missing_required": [],
+        "missing_recommended": [
+          "raw_voice_retain_suggestion"
+        ]
+      }
+    ]
+  },
+  "next_targets": [
+    "阶段 B 已达标，可进入阶段 C：旧项目 narration_generation prompt 接入与禁用最终 LLM 的输入回放验收"
+  ]
+}

@@ -1,0 +1,58 @@
+.DS_Store
+/config.toml
+/storage/
+/.idea/
+/app/services/__pycache__
+/app/__pycache__/
+/app/config/__pycache__/
+/app/models/__pycache__/
+/app/utils/__pycache__/
+/*/__pycache__/*
+.vscode
+__pycache__
+logs/
+.vscode/
+.qoder/
+.pytest_cache/
+pytest-cache-files-*/
+pytest-of-*/
+MagicMock/
+AppData/
+
+
+node_modules
+
+# 前端构建产物
+web/dist/
+
+# 本地测试视频（不应提交）
+/test.mp4
+
+# VuePress 默认临时文件目录
+/sites/docs/.vuepress/.temp
+# VuePress 默认缓存目录
+/sites/docs/.vuepress/.cache
+# VuePress 默认构建生成的静态文件目录
+/sites/docs/.vuepress/dist
+# Generated media, subtitles, scripts, caches, and local models should live in the external workspace.
+# Keep equivalent in-repo paths visible to git so accidental writes back into the repository are easy to catch.
+vendor/**/.git/
+vendor/**/.venv/
+vendor/**/.runtime_venv/
+vendor/**/.pytest_cache/
+vendor/**/__pycache__/
+vendor/**/AppData/
+vendor/**/work-dir/
+vendor/**/ffcache*
+vendor/**/node_modules/
+
+bug清单.md
+task.md
+.claude/*
+.serena/*
+
+# OpenSpec: 忽略活动的变更提案，但保留归档和规范
+openspec/*
+AGENTS.md
+CLAUDE.md
+tests/__pycache__/
