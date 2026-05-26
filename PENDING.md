@@ -254,3 +254,33 @@ native 稳定镜头/场景切分工具迁移
 - Reason: prompt-facing headings were intentionally renamed and extra two_round_visual rules removed, but tests still asserted old labels.
 - Refactor: split `generate_two_round_visual_narration_items()` into smaller helpers to satisfy the <=80-line function rule.
 - Guard: run compileall, `tools/audit_two_round_visual_code_rules.py`, and focused pytest before real task runs.
+
+### [DONE-005] 修正 visual_focus_segments API 到运行时契约
+
+**完成日期**：2026-05-26
+
+**方案**：
+
+- `movie_story_visual_focus_segments` 作为正式 API 字段进入 `two_round_visual` 运行时。
+- `unified_entry.py` 明确只接受当前正式 movie_story 主流程。
+- 旧 native/legacy movie_story 标签拒绝进入正式主流程，不再迁移为当前模式。
+- FunASR 测试去除本机固定 wav 路径依赖。
+
+### [DONE-006] 全量测试契约收敛到稳定基线
+
+**完成日期**：2026-05-26
+
+**结果**：
+
+```text
+333 passed, 1 skipped, 1 warning
+```
+
+**方案**：
+
+- 修正 `json_utils` 对 fenced JSON 和双大括号 JSON 的解析。
+- 修正 FFmpeg 相关测试 mock，使其符合当前 `run_cancellable` 调用契约。
+- 更新旧 native/legacy 测试，防止旧 movie_story 主流程回流。
+- 修正 audit stage 命名空间测试期望。
+- 未改动基础双轮提示词和视觉增强提示词。
+

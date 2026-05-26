@@ -1,0 +1,40 @@
+# Local configuration and secrets
+/config.toml
+*.env
+.env
+
+# Python cache/build artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Node / frontend build artifacts
+node_modules/
+/web/node_modules/
+/web/dist/
+/web/.vite/
+
+# Runtime workspaces and generated media
+/workspace/
+/AIVideo-workspace/
+/*-workspace/
+/.-workspace/
+/storage/temp/
+/storage/tasks/
+/.patch_backups/
+/reports/*.tmp
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,6 +1,6 @@
 # two_round_visual 当前状态
 
-**最后更新**：2026-05-25  
+**最后更新**：2026-05-26  
 **状态**：视觉增强链已达到及格测试状态；本轮完成旧后置 selected-highlight 视觉证据链主流程清理
 
 ## 1. 当前结论
@@ -117,3 +117,13 @@ visual_focus_segments 不是 AI 推荐高光，只是详细抽帧区域；
 第二轮后不复选，直接剪辑；
 失败不 fallback。
 ```
+
+## 8. 2026-05-26 后续收敛状态
+
+```text
+round2：已完成 movie_story_visual_focus_segments API → runtime 映射，unified_entry 只保留当前正式主流程，旧 native/legacy 标签拒绝进入 movie_story 主流程。
+round3：已修正全量测试契约，确认当前稳定测试基线为 333 passed, 1 skipped, 1 warning。
+```
+
+后续不得为了旧测试或旧脚本恢复 selected-highlight 后置视觉证据链，也不得把 legacy/native 重新接回 movie_story 主流程。
+
