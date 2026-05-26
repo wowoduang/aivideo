@@ -5,6 +5,8 @@ import json
 import shutil
 from pathlib import Path
 
+from app.utils import workspace
+
 
 def _stage_dir(audit_dir, stage_name):
     rows = json.loads((audit_dir / "_stage_index.json").read_text(encoding="utf-8"))
@@ -17,7 +19,7 @@ def _stage_dir(audit_dir, stage_name):
 def test_legacy_understanding_does_not_run_native_timeline_closure(monkeypatch):
     from app.services.movie_story import timeline_runtime as rt
 
-    base = Path(".-workspace") / "test_chain_isolation"
+    base = Path(workspace.temp_dir("tests/test_chain_isolation", create=True))
     if base.exists():
         shutil.rmtree(base)
     out_path = base / "scripts" / "movie_story.json"

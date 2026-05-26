@@ -20,6 +20,7 @@ import re
 import shutil
 import time
 from pathlib import Path
+from app.utils import workspace
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ def _transition_word(text: str) -> bool:
 def audit_stage(video_path: str, output_script_path: str, stage: str, items: List[Dict[str, Any]], metadata=None):
     """v6 审计：导出 JSON/CSV/可选 clips；评分表会展开各维度。"""
     try:
-        root = Path(output_script_path).parent / "_movie_story_direct_v6_audit" if output_script_path else Path(".-workspace") / "debug" / "_movie_story_direct_v6_audit"
+        root = Path(output_script_path).parent / "_movie_story_direct_v6_audit" if output_script_path else Path(workspace.runtime_dir("debug/_movie_story_direct_v6_audit", create=True))
         run_id = os.environ.get("AIVIDEO_AUDIT_RUN_ID") or time.strftime("run_%Y%m%d_%H%M%S")
         os.environ["AIVIDEO_AUDIT_RUN_ID"] = run_id
         run_dir = root / run_id

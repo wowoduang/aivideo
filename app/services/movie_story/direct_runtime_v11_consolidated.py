@@ -27,6 +27,7 @@ import re
 import subprocess
 import time
 from pathlib import Path
+from app.utils import workspace
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -193,7 +194,7 @@ def audit_base(video_path: str = "", output_path: str = "") -> Path:
     guess = cwd.parent / (cwd.name + "-workspace") / "frontend_uploads" / "video"
     if guess.exists():
         return guess / "_movie_story_pipeline_audit_clips"
-    return Path(".-workspace") / "debug" / "_movie_story_pipeline_audit_clips"
+    return Path(workspace.runtime_dir("debug/_movie_story_pipeline_audit_clips", create=True))
 
 
 def run_dir(video_path: str = "", output_path: str = "") -> Path:

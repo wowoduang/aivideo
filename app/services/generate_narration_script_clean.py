@@ -2112,8 +2112,7 @@ _RAW_SRT_TIME_RE = re.compile(
 
 def _raw_srt_debug_dump(name: str, content) -> None:
     try:
-        out_dir = Path("storage") / "temp" / "raw_srt_debug"
-        out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = Path(utils.temp_dir("raw_srt_debug", create=True))
         (out_dir / name).write_text(str(content or ""), encoding="utf-8")
     except Exception as _e:
         logger.debug("raw_srt debug dump 写入失败: {}", _e)

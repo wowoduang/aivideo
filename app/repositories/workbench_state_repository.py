@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from app.schemas.workbench_state import TaskLogItem
+from app.utils import workspace
 
 
 class WorkbenchStateRepository:
@@ -14,8 +15,17 @@ class WorkbenchStateRepository:
     a real database later.
     """
 
-    def __init__(self, base_dir: str | Path = "workspace/state") -> None:
-        self.base_dir = Path(base_dir)
+    def __init__(self, base_dir: str | Path | None = None) -> None:
+        """初始化工作台状态仓库。
+
+        默认写入外部 workspace/state/workbench，避免在项目根目录重建
+        workspace/state。测试或调用方仍可显式传入 base_dir。
+        """
+        self.base_dir = (
+            Path(base_dir)
+            if base_dir is not None
+            else Path(workspace.state_dir("workbench", create=True))
+        )
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.bindings_file = self.base_dir / "script_bindings.json"
         self.task_logs_file = self.base_dir / "task_logs.json"

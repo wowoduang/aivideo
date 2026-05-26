@@ -5,6 +5,8 @@ import shutil
 import pytest
 from pathlib import Path
 
+from app.utils import workspace
+
 from app.services.movie_story import engine_policy
 from app.services.movie_story.native_engines import run_native_movie_story_engine
 
@@ -93,7 +95,7 @@ def test_direct_cut_contract_keeps_raw_audio_and_highlight_flags():
 def test_historical_drama_direct_cut_returns_before_scene_detection(monkeypatch):
     import app.services.movie_story.movie_story_native_engine as native
 
-    output_dir = Path(".-workspace/test_historical_direct_cut_native_engine")
+    output_dir = Path(workspace.temp_dir("tests/test_historical_direct_cut_native_engine", create=True))
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -155,7 +157,7 @@ def test_legacy_understanding_highlight_mode_uses_old_finalize_path(monkeypatch)
     import app.services.movie_story.movie_story_native_engine as native
 
     calls = []
-    output_dir = Path(".-workspace/test_legacy_understanding_native_engine")
+    output_dir = Path(workspace.temp_dir("tests/test_legacy_understanding_native_engine", create=True))
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

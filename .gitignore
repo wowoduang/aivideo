@@ -38,3 +38,33 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+
+# aivideo local runtime / generated artifacts
+.patch_backups/
+.-workspace/
+workspace/
+reports/
+storage/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+patch_aivideo_*.py
+audit_aivideo_*.py
+aivideo_*audit*.md
+aivideo_*evidence*.md
+aivideo_*handoff*.md
+aivideo_*analysis*.md
+
+# aivideo historical backup residues kept outside source tree
+*.bak
+*.bak_*
+*.backup
+*.backup_*
+*.orig
+*.rej
+*.tmp
+*.tmp_*
+*.old
+*.old_*
+*~

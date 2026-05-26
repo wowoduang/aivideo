@@ -1,9 +1,12 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
 import warnings
 from enum import Enum
 from typing import Any, List, Optional, Union
 
 import pydantic
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # 忽略 Pydantic 的特定警告
 warnings.filterwarnings(
@@ -61,11 +64,10 @@ class VideoAspect(str, Enum):
         return 1920, 1080
 
 
-class _Config:
-    arbitrary_types_allowed = True
+MATERIAL_INFO_CONFIG = ConfigDict(arbitrary_types_allowed=True)
 
 
-@pydantic.dataclasses.dataclass(config=_Config)
+@pydantic.dataclasses.dataclass(config=MATERIAL_INFO_CONFIG)
 class MaterialInfo:
     provider: str = "pexels"
     url: str = ""

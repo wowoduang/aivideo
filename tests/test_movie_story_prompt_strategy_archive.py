@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from app.utils import workspace
+
 from app.services.movie_story import prompt_strategy_archive as archive
 
 
@@ -28,7 +30,7 @@ def test_score_narration_items_penalizes_repetition_and_cliche():
 
 
 def test_record_and_select_prompt_strategy_by_category_score(monkeypatch):
-    path = Path(".-workspace") / "tests" / "strategy_scores.jsonl"
+    path = Path(workspace.temp_dir("tests/prompt_strategy_archive", create=True)) / "strategy_scores.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         path.unlink()

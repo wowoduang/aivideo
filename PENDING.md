@@ -284,3 +284,19 @@ native 稳定镜头/场景切分工具迁移
 - 修正 audit stage 命名空间测试期望。
 - 未改动基础双轮提示词和视觉增强提示词。
 
+### [DONE-007] 消除 Pydantic warning 并修正 two_round_visual 审计规则
+
+**完成日期**：2026-05-26
+
+**结果**：
+
+```text
+334 passed, 1 skipped
+```
+
+**方案**：
+
+- `app/models/schema.py` 改为 Pydantic v2 `ConfigDict` 配置，消除 class-based config warning。
+- `tools/audit_two_round_visual_code_rules.py` 去除旧的 80 行函数硬限制。
+- 审计工具改为 AST 级检查 `print`、`logging`、`_ORIGINAL_*` alias 和类型注解，避免把文档/字符串/测试 guard 误判为正式源码违规。
+

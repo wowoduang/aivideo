@@ -3,6 +3,7 @@
 from __future__ import annotations
 import csv, json, logging, os, re, shutil, subprocess, time
 from pathlib import Path
+from app.utils import workspace
 from typing import Any, Dict, Iterable, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -237,7 +238,7 @@ def _audit_export_clip(video_path: str, out: Path, start: float, end: float) -> 
 
 def _audit_stage(video_path: str, output_script_path: str, stage: str, items: List[Dict[str, Any]], metadata=None):
     try:
-        root = Path(output_script_path).parent / "_movie_story_direct_v2_audit" if output_script_path else Path(".-workspace") / "debug" / "_movie_story_direct_v2_audit"
+        root = Path(output_script_path).parent / "_movie_story_direct_v2_audit" if output_script_path else Path(workspace.runtime_dir("debug/_movie_story_direct_v2_audit", create=True))
         run_id = os.environ.get("AIVIDEO_AUDIT_RUN_ID") or time.strftime("run_%Y%m%d_%H%M%S")
         os.environ["AIVIDEO_AUDIT_RUN_ID"] = run_id
         run = root / run_id

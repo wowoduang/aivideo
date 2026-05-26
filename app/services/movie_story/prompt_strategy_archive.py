@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterable, List, Mapping
 
 from loguru import logger
 
-from app.utils.workspace import project_root
+from app.utils import workspace
 
 JsonDict = Dict[str, Any]
 
@@ -164,7 +164,12 @@ def _as_text(value: Any) -> str:
 
 
 def strategy_archive_path() -> Path:
-    return Path(project_root()) / "reports" / "narration_prompt_strategies" / "strategy_scores.jsonl"
+    """返回提示词策略评分归档路径。
+
+    策略评分是运行/分析产物，写入外部 workspace/analysis，避免在项目根目录
+    重建 reports/。
+    """
+    return Path(workspace.analysis_dir("narration_prompt_strategies", create=True)) / "strategy_scores.jsonl"
 
 
 def get_prompt_strategy(strategy_id: str = "", movie_category: str = "") -> JsonDict:
