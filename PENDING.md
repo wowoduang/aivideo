@@ -300,3 +300,15 @@ native 稳定镜头/场景切分工具迁移
 - `tools/audit_two_round_visual_code_rules.py` 去除旧的 80 行函数硬限制。
 - 审计工具改为 AST 级检查 `print`、`logging`、`_ORIGINAL_*` alias 和类型注解，避免把文档/字符串/测试 guard 误判为正式源码违规。
 
+## DONE-008 functional contracts round11
+
+- 新增 `app/services/movie_story/functional_contracts.py`，用数据契约固定当前三条正式主流程、可复用支撑能力、长视频拆短视频待审模块、旧 movie_story native/legacy 待退休候选。
+- 新增 `tests/movie_story/test_functional_contracts.py`，保护旧 movie_story native/legacy 主流程不会作为新代码 active reference 回流。
+- 本轮不改提示词、不改运行调度、不删除旧模块，只为后续拆函数和迁移提供引用边界。
+
+## DONE-009 functional boundaries round12
+
+- 新增 `app/services/movie_story/functional_boundaries.py`，把 round11 静态功能契约封装成可复用函数。
+- 新增 `tests/movie_story/test_functional_boundaries.py`，保护当前主流程模块、支撑模块、待退休模块和路径转换规则。
+- 后续自动补丁新增 movie_story 依赖时，可使用 `assert_new_code_may_reference(module, reason=...)` 防止旧 native/legacy 主流程回流。
+
