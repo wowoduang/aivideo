@@ -1,0 +1,69 @@
+export type SpeakerExample = {
+  start: string;
+  end: string;
+  text: string;
+  confidence: number;
+};
+
+export type SpeakerPreviewItem = {
+  speaker_id: string;
+  total_duration: number;
+  segment_count: number;
+  examples: SpeakerExample[];
+};
+
+export type SpeakerPreview = {
+  provider: string;
+  speaker_count: number;
+  speakers: SpeakerPreviewItem[];
+};
+
+export type SpeakerPreviewResponse = {
+  ok: boolean;
+  data: {
+    provider: string;
+    speaker_segments_count: number;
+    speaker_preview: SpeakerPreview;
+  };
+};
+
+export type SpeakerContextResponse = {
+  ok: boolean;
+  data: {
+    provider: string;
+    speaker_role_map: Record<string, string>;
+    speaker_context: string;
+    speaker_preview?: SpeakerPreview;
+  };
+};
+
+async function postJson<T>(path: string, payload: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `request failed: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+export function previewSpeakerContext(payload: {
+  aliyun_result_json: Record<string, unknown>;
+  max_examples_per_speaker?: number;
+}): Promise<SpeakerPreviewResponse> {
+  return postJson<SpeakerPreviewResponse>('/api/v1/speaker-context/preview', payload);
+}
+
+export function buildBoundSpeakerContext(payload: {
+  subtitle_segments: Array<Record<string, unknown>>;
+  aliyun_result_json: Record<string, unknown>;
+  speaker_role_map: Record<string, string>;
+  speaker_confidence_map?: Record<string, number>;
+  max_lines?: number;
+}): Promise<SpeakerContextResponse> {
+  return postJson<SpeakerContextResponse>('/api/v1/speaker-context/bound-context', payload);
+}

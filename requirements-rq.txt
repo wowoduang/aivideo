@@ -1,0 +1,4 @@
+# Optional production queue backend. Install only when using:
+#   AIVIDEO_JOB_BACKEND=rq
+redis>=5.0.0
+rq>=1.16.0

@@ -1,0 +1,13 @@
+[
+  {
+    "candidate_id": "active_runtime_audio_protected_timeline",
+    "candidate_type": "runtime_marker",
+    "video_start": 0.0,
+    "video_end": 0.001,
+    "subtitle_text": "ACTIVE_RUNTIME=timeline_runtime; movie_story_chain=legacy_understanding; audio/subtitle protected timeline; no boundary_score.",
+    "movie_story_chain": "legacy_understanding",
+    "highlight_score": 1.0,
+    "score": 1.0,
+    "selected": true
+  }
+]

@@ -1,0 +1,102 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from app.services.movie_story.scene_boundary_source import build_scene_boundary_context_from_video
+from app.services.movie_story.scene_boundary_source import convert_boundary_points_to_shot_boundaries
+from app.services.movie_story.scene_boundary_source import detect_shot_boundaries_from_video
+
+
+class TestSceneBoundarySource(unittest.TestCase):
+    def test_convert_boundary_points_to_shot_boundaries(self) -> None:
+        shots = convert_boundary_points_to_shot_boundaries(
+            boundary_points=[
+                {"time": 2.5, "reason": ["pyscenedetect_adaptive"]},
+                {"time": 6.0, "reason": ["pyscenedetect_adaptive"]},
+            ],
+            story_start=0,
+            story_end=10,
+        )
+
+        self.assertEqual(len(shots), 3)
+        self.assertEqual(shots[0]["start"], 0.0)
+        self.assertEqual(shots[0]["end"], 2.5)
+        self.assertEqual(shots[1]["start"], 2.5)
+        self.assertEqual(shots[1]["end"], 6.0)
+        self.assertEqual(shots[2]["start"], 6.0)
+        self.assertEqual(shots[2]["end"], 10.0)
+        self.assertEqual(shots[0]["source"], "pyscenedetect")
+
+    def test_detect_empty_result_raises(self) -> None:
+        video_path = Path("tests/tmp_scene_boundary_source_empty.mp4")
+        video_path.write_bytes(b"fake")
+        try:
+            with patch(
+                "app.services.movie_story.scene_boundary_source._call_timeline_pyscenedetect_detector",
+                return_value=[],
+            ):
+                with self.assertRaises(RuntimeError):
+                    detect_shot_boundaries_from_video(
+                        video_path=str(video_path),
+                        story_start=0,
+                        story_end=10,
+                    )
+        finally:
+            video_path.unlink(missing_ok=True)
+
+    def test_detect_converts_legacy_detector_output(self) -> None:
+        video_path = Path("tests/tmp_scene_boundary_source_ok.mp4")
+        video_path.write_bytes(b"fake")
+        try:
+            with patch(
+                "app.services.movie_story.scene_boundary_source._call_timeline_pyscenedetect_detector",
+                return_value=[
+                    {"time": 2.0, "reason": ["pyscenedetect_adaptive"]},
+                    {"time": 5.0, "reason": ["pyscenedetect_adaptive"]},
+                ],
+            ):
+                payload = detect_shot_boundaries_from_video(
+                    video_path=str(video_path),
+                    story_start=0,
+                    story_end=8,
+                )
+            self.assertEqual(payload["shot_count"], 3)
+            self.assertEqual(payload["shot_boundaries"][0]["start"], 0.0)
+            self.assertEqual(payload["shot_boundaries"][2]["end"], 8.0)
+        finally:
+            video_path.unlink(missing_ok=True)
+
+    def test_build_scene_boundary_context_from_video(self) -> None:
+        video_path = Path("tests/tmp_scene_boundary_source_context.mp4")
+        video_path.write_bytes(b"fake")
+        try:
+            with patch(
+                "app.services.movie_story.scene_boundary_source._call_timeline_pyscenedetect_detector",
+                return_value=[
+                    {"time": 10.0, "reason": ["pyscenedetect_adaptive"]},
+                    {"time": 20.0, "reason": ["pyscenedetect_adaptive"]},
+                ],
+            ):
+                payload = build_scene_boundary_context_from_video(
+                    video_path=str(video_path),
+                    subtitle_segments=[
+                        {"start": 0, "end": 5, "text": "欠税 稻种"},
+                        {"start": 12, "end": 15, "text": "官兵 进屋"},
+                        {"start": 22, "end": 25, "text": "母亲 哭喊"},
+                    ],
+                    target_scene_count=3,
+                    min_scene_duration=5,
+                    max_scene_duration=20,
+                )
+            self.assertEqual(payload["shot_detection"]["shot_count"], 3)
+            self.assertIn("scene_001", payload["scene_boundary_context"])
+            self.assertIn("画面事实：未提供视觉锚点，不能从字幕推断画面事实", payload["scene_boundary_context"])
+        finally:
+            video_path.unlink(missing_ok=True)
+
+
+if __name__ == "__main__":
+    unittest.main()

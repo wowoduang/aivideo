@@ -1,0 +1,11 @@
+[
+  {
+    "candidate_id": "boundary_summary",
+    "candidate_type": "summary",
+    "video_start": 10.0,
+    "video_end": 10.001,
+    "subtitle_text": "ffmpeg_boundaries=0, protected_ffmpeg=0, subtitle_gap_boundaries=1, fused_boundaries=1, dropped_inside_subtitle=0, snapped_to_subtitle_edge=0, internal_visual_cuts_added=0",
+    "score": 1.0,
+    "highlight_score": 1.0
+  }
+]

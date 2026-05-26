@@ -1,0 +1,314 @@
+# aivideo post-cleanup contract audit
+
+Project: `E:\aivideo`
+
+## Summary
+
+- FAIL: 76
+- WARN: 73
+- TOTAL: 149
+
+## FAIL
+
+- **old-selected-highlight-visual-residue** — `audit_aivideo_post_cleanup_contracts.py`
+  - active file still contains `build_selected_highlight_visual_evidence_package` at lines [43, 320]
+- **old-selected-highlight-visual-residue** — `audit_aivideo_post_cleanup_contracts.py`
+  - active file still contains `movie_story_enable_visual_evidence` at lines [40, 321]
+- **old-selected-highlight-visual-residue** — `audit_aivideo_post_cleanup_contracts.py`
+  - active file still contains `movie_story_script_selected_highlight_keyframes` at lines [46]
+- **old-selected-highlight-visual-residue** — `audit_aivideo_post_cleanup_contracts.py`
+  - active file still contains `movie_story_script_selected_highlight_visual_evidence` at lines [47]
+- **old-selected-highlight-visual-residue** — `audit_aivideo_post_cleanup_contracts.py`
+  - active file still contains `movie_story_selected_highlight_max_frames` at lines [41]
+- **old-selected-highlight-visual-residue** — `audit_aivideo_post_cleanup_contracts.py`
+  - active file still contains `selected_highlight_contact_sheet` at lines [45]
+- **old-selected-highlight-visual-residue** — `audit_aivideo_post_cleanup_contracts.py`
+  - active file still contains `selected_highlight_visual_evidence` at lines [42, 43, 44, 47, 319, 320]
+- **old-selected-highlight-visual-residue** — `audit_aivideo_post_cleanup_contracts.py`
+  - active file still contains `selected_highlight_visual_evidence_workflow` at lines [42]
+- **old-selected-highlight-visual-residue** — `patch_aivideo_cleanup_old_visual_evidence.py`
+  - active file still contains `build_selected_highlight_visual_evidence_package` at lines [124, 332]
+- **old-selected-highlight-visual-residue** — `patch_aivideo_cleanup_old_visual_evidence.py`
+  - active file still contains `movie_story_enable_visual_evidence` at lines [122, 136, 151, 156, 169, 171, 330, 342]
+- **old-selected-highlight-visual-residue** — `patch_aivideo_cleanup_old_visual_evidence.py`
+  - active file still contains `movie_story_selected_highlight_max_frames` at lines [141, 343]
+- **old-selected-highlight-visual-residue** — `patch_aivideo_cleanup_old_visual_evidence.py`
+  - active file still contains `selected_highlight_visual_evidence` at lines [123, 124, 182, 194, 212, 228, 238, 253]
+- **old-selected-highlight-visual-residue** — `patch_aivideo_cleanup_old_visual_evidence.py`
+  - active file still contains `selected_highlight_visual_evidence_workflow` at lines [123, 182, 194, 212, 228, 238, 253, 254]
+- **old-selected-highlight-visual-residue** — `PENDING.md`
+  - active file still contains `movie_story_enable_visual_evidence` at lines [209]
+- **old-selected-highlight-visual-residue** — `PENDING.md`
+  - active file still contains `selected_highlight_visual_evidence` at lines [211]
+- **old-selected-highlight-visual-residue** — `PENDING.md`
+  - active file still contains `selected_highlight_visual_evidence_workflow` at lines [211]
+- **old-selected-highlight-visual-residue** — `docs/decisions/ADR-005-two-round-visual-first-round-multimodal.md`
+  - active file still contains `movie_story_enable_visual_evidence` at lines [64]
+- **old-selected-highlight-visual-residue** — `docs/decisions/ADR-005-two-round-visual-first-round-multimodal.md`
+  - active file still contains `selected_highlight_visual_evidence` at lines [64]
+- **old-selected-highlight-visual-residue** — `docs/decisions/ADR-005-two-round-visual-first-round-multimodal.md`
+  - active file still contains `selected_highlight_visual_evidence_workflow` at lines [64]
+- **old-selected-highlight-visual-residue** — `docs/status/two_round_visual_status.md`
+  - active file still contains `movie_story_enable_visual_evidence` at lines [75]
+- **old-selected-highlight-visual-residue** — `docs/status/two_round_visual_status.md`
+  - active file still contains `selected_highlight_visual_evidence` at lines [76, 95]
+- **old-selected-highlight-visual-residue** — `docs/status/two_round_visual_status.md`
+  - active file still contains `selected_highlight_visual_evidence_workflow` at lines [76, 95]
+- **old-selected-highlight-visual-residue** — `tests/movie_story/test_movie_story_no_legacy_visual_postprocessor.py`
+  - active file still contains `build_selected_highlight_visual_evidence_package` at lines [14]
+- **old-selected-highlight-visual-residue** — `tests/movie_story/test_movie_story_no_legacy_visual_postprocessor.py`
+  - active file still contains `movie_story_enable_visual_evidence` at lines [12, 27]
+- **old-selected-highlight-visual-residue** — `tests/movie_story/test_movie_story_no_legacy_visual_postprocessor.py`
+  - active file still contains `movie_story_selected_highlight_max_frames` at lines [28]
+- **old-selected-highlight-visual-residue** — `tests/movie_story/test_movie_story_no_legacy_visual_postprocessor.py`
+  - active file still contains `selected_highlight_visual_evidence` at lines [13, 14]
+- **old-selected-highlight-visual-residue** — `tests/movie_story/test_movie_story_no_legacy_visual_postprocessor.py`
+  - active file still contains `selected_highlight_visual_evidence_workflow` at lines [13]
+- **old-selected-highlight-visual-residue** — `tests/movie_story/test_movie_story_old_engine_dispatch_guard.py`
+  - active file still contains `selected_highlight_visual_evidence` at lines [13]
+- **old-selected-highlight-visual-residue** — `tests/movie_story/test_movie_story_old_engine_dispatch_guard.py`
+  - active file still contains `selected_highlight_visual_evidence_workflow` at lines [13]
+- **original-alias** — `audit_aivideo_post_cleanup_contracts.py`
+  - contains `_ORIGINAL_` alias pattern at lines [224, 225, 230]
+- **duplicate-function-definition** — `app/services/local_job_runner.py`
+  - function `progress_callback` defined multiple times at lines [622, 639]
+- **duplicate-function-definition** — `app/services/local_job_runner.py`
+  - function `runner` defined multiple times at lines [621, 638, 668]
+- **duplicate-function-definition** — `app/services/state.py`
+  - function `__init__` defined multiple times at lines [20, 50]
+- **duplicate-function-definition** — `app/services/state.py`
+  - function `delete_task` defined multiple times at lines [43, 86]
+- **duplicate-function-definition** — `app/services/state.py`
+  - function `get_task` defined multiple times at lines [14, 40, 75]
+- **duplicate-function-definition** — `app/services/state.py`
+  - function `update_task` defined multiple times at lines [10, 23, 55]
+- **duplicate-function-definition** — `app/services/voice.py`
+  - function `formatter` defined multiple times at lines [1373, 1473]
+- **duplicate-function-definition** — `app/services/llm/exceptions.py`
+  - function `__init__` defined multiple times at lines [14, 29, 40, 51, 65, 79, 93, 104, 114]
+- **duplicate-function-definition** — `app/services/llm/litellm_provider.py`
+  - function `_initialize` defined multiple times at lines [98, 319]
+- **duplicate-function-definition** — `app/services/llm/litellm_provider.py`
+  - function `_make_api_call` defined multiple times at lines [263, 492]
+- **duplicate-function-definition** — `app/services/llm/litellm_provider.py`
+  - function `_validate_model_support` defined multiple times at lines [75, 296]
+- **duplicate-function-definition** — `app/services/llm/litellm_provider.py`
+  - function `provider_name` defined multiple times at lines [63, 272]
+- **duplicate-function-definition** — `app/services/llm/litellm_provider.py`
+  - function `supported_models` defined multiple times at lines [70, 291]
+- **duplicate-function-definition** — `app/services/llm/migration_adapter.py`
+  - function `__init__` defined multiple times at lines [152, 209]
+- **duplicate-function-definition** — `app/services/llm/migration_adapter.py`
+  - function `_run_async_safely` defined multiple times at lines [22, 215]
+- **duplicate-function-definition** — `app/services/llm/migration_adapter.py`
+  - function `create_vision_analyzer` defined multiple times at lines [333, 65]
+- **duplicate-function-definition** — `app/services/llm/migration_adapter.py`
+  - function `generate_narration` defined multiple times at lines [338, 81]
+- **duplicate-function-definition** — `app/services/movie_story/audit_runtime.py`
+  - function `_safe_audit_namespace_path_v41` defined multiple times at lines [203, 229]
+- **duplicate-function-definition** — `app/services/movie_story/audit_runtime.py`
+  - function `_safe_audit_stage_name_v41` defined multiple times at lines [224, 250]
+- **duplicate-function-definition** — `app/services/movie_story/direct_runtime_v11_consolidated.py`
+  - function `flush` defined multiple times at lines [674, 1038]
+- **duplicate-function-definition** — `app/services/movie_story/direct_runtime_v2.py`
+  - function `flush` defined multiple times at lines [128, 198]
+- **duplicate-function-definition** — `app/services/movie_story/direct_runtime_v4.py`
+  - function `flush` defined multiple times at lines [251, 355]
+- **duplicate-function-definition** — `app/services/movie_story/direct_runtime_v6.py`
+  - function `flush` defined multiple times at lines [221, 289]
+- **duplicate-function-definition** — `app/services/movie_story/schemas.py`
+  - function `duration` defined multiple times at lines [16, 43, 66, 100, 127]
+- **duplicate-function-definition** — `app/services/movie_story/stage1_segmentation.py`
+  - function `flush` defined multiple times at lines [120, 235]
+- **duplicate-function-definition** — `app/services/movie_story/timeline_runtime.py`
+  - function `flush` defined multiple times at lines [1324, 1693]
+- **duplicate-function-definition** — `app/services/prompts/base.py`
+  - function `__init__` defined multiple times at lines [53, 159, 168, 177]
+- **duplicate-function-definition** — `app/services/prompts/exceptions.py`
+  - function `__init__` defined multiple times at lines [21, 37, 45, 60, 72]
+- **duplicate-function-definition** — `app/services/prompts/manager.py`
+  - function `get_prompt` defined multiple times at lines [280, 34]
+- **duplicate-function-definition** — `app/services/prompts/movie_story_narration/narration_generation.py`
+  - function `__init__` defined multiple times at lines [10, 101]
+- **duplicate-function-definition** — `app/services/prompts/movie_story_narration/narration_generation.py`
+  - function `get_template` defined multiple times at lines [45, 140]
+- **duplicate-function-definition** — `app/services/SDE/short_drama_explanation.py`
+  - function `analyze_subtitle` defined multiple times at lines [625, 79]
+- **duplicate-function-definition** — `app/services/SDE/short_drama_explanation.py`
+  - function `generate_narration_script` defined multiple times at lines [684, 366]
+- **duplicate-function-definition** — `app/utils/gemini_analyzer.py`
+  - function `__init__` defined multiple times at lines [20, 160]
+- **duplicate-function-definition** — `app/utils/gemini_openai_analyzer.py`
+  - function `__init__` defined multiple times at lines [25, 103]
+- **duplicate-function-definition** — `app/utils/script_generator.py`
+  - function `__init__` defined multiple times at lines [16, 86, 140, 159, 320, 356, 401, 436, 281]
+- **duplicate-function-definition** — `app/utils/script_generator.py`
+  - function `_generate` defined multiple times at lines [46, 106, 181, 200, 334, 372, 415]
+- **duplicate-function-definition** — `app/utils/script_generator.py`
+  - function `_process_response` defined multiple times at lines [49, 119, 194, 311, 347, 392, 428]
+- **duplicate-function-definition** — `app/utils/script_generator.py`
+  - function `time_to_seconds` defined multiple times at lines [517, 594]
+- **duplicate-function-definition** — `tests/test_generate_narration_script_clean.py`
+  - function `fake_call` defined multiple times at lines [87, 297, 348, 380]
+- **duplicate-function-definition** — `tests/test_movie_story_engine_boundary.py`
+  - function `fake_legacy_highlight` defined multiple times at lines [62, 113, 143]
+- **duplicate-function-definition** — `tests/test_movie_story_engine_boundary.py`
+  - function `fake_movie_story_pipeline` defined multiple times at lines [85, 168]
+- **duplicate-function-definition** — `tests/test_movie_story_engine_boundary.py`
+  - function `fake_native_highlight` defined multiple times at lines [37, 109, 139]
+- **duplicate-function-definition** — `tests/test_movie_story_legacy_understanding_baseline.py`
+  - function `fake_plan` defined multiple times at lines [49, 319]
+- **duplicate-function-definition** — `tests/movie_story/test_two_round_feature_modes.py`
+  - function `fake_generate` defined multiple times at lines [16, 103, 148]
+- **original-alias** — `tools/audit_two_round_visual_code_rules.py`
+  - contains `_ORIGINAL_` alias pattern at lines [19]
+
+## WARN
+
+- **legacy-native-active-reference** — `audit_aivideo_post_cleanup_contracts.py`
+  - review whether `engine_backend` is still needed at lines [56]
+- **legacy-native-active-reference** — `audit_aivideo_post_cleanup_contracts.py`
+  - review whether `legacy movie_story` is still needed at lines [55]
+- **legacy-native-active-reference** — `audit_aivideo_post_cleanup_contracts.py`
+  - review whether `movie_story_native_engine` is still needed at lines [53]
+- **legacy-native-active-reference** — `audit_aivideo_post_cleanup_contracts.py`
+  - review whether `native movie_story` is still needed at lines [54]
+- **legacy-native-active-reference** — `audit_aivideo_post_cleanup_contracts.py`
+  - review whether `run_legacy_movie_story_engine` is still needed at lines [51]
+- **legacy-native-active-reference** — `audit_aivideo_post_cleanup_contracts.py`
+  - review whether `run_native_movie_story_engine` is still needed at lines [52]
+- **legacy-native-active-reference** — `patch_aivideo_cleanup_old_visual_evidence.py`
+  - review whether `movie_story_native_engine` is still needed at lines [235, 242]
+- **legacy-native-active-reference** — `app/services/subtitle_first_pipeline.py`
+  - review whether `movie_story_native_engine` is still needed at lines [5, 10, 22, 28]
+- **legacy-native-active-reference** — `app/services/subtitle_first_pipeline.py`
+  - review whether `run_native_movie_story_engine` is still needed at lines [23, 30]
+- **legacy-native-active-reference** — `app/services/movie_story/composition_bridge.py`
+  - review whether `movie_story_native_engine` is still needed at lines [290]
+- **legacy-native-active-reference** — `app/services/movie_story/engine_failover.py`
+  - review whether `engine_backend` is still needed at lines [18, 19, 20, 21, 25, 99]
+- **legacy-native-active-reference** — `app/services/movie_story/engine_result.py`
+  - review whether `engine_backend` is still needed at lines [25, 34, 35, 49]
+- **legacy-native-active-reference** — `app/services/movie_story/engine_status.py`
+  - review whether `engine_backend` is still needed at lines [16, 31]
+- **legacy-native-active-reference** — `app/services/movie_story/highlight_native_engine.py`
+  - review whether `engine_backend` is still needed at lines [6, 50, 51, 52]
+- **legacy-native-active-reference** — `app/services/movie_story/legacy_engines.py`
+  - review whether `engine_backend` is still needed at lines [24, 25, 37, 38, 39]
+- **legacy-native-active-reference** — `app/services/movie_story/legacy_engines.py`
+  - review whether `run_legacy_movie_story_engine` is still needed at lines [19, 47]
+- **legacy-native-active-reference** — `app/services/movie_story/movie_story_native_engine.py`
+  - review whether `movie_story_native_engine` is still needed at lines [264, 1377, 1382, 1386]
+- **legacy-native-active-reference** — `app/services/movie_story/movie_story_native_engine.py`
+  - review whether `run_native_movie_story_engine` is still needed at lines [1380, 1388]
+- **legacy-native-active-reference** — `app/services/movie_story/native_engines.py`
+  - review whether `movie_story_native_engine` is still needed at lines [16]
+- **legacy-native-active-reference** — `app/services/movie_story/native_engines.py`
+  - review whether `run_native_movie_story_engine` is still needed at lines [15, 29]
+- **legacy-native-active-reference** — `app/services/movie_story/README.md`
+  - review whether `engine_backend` is still needed at lines [132, 142, 143]
+- **legacy-native-active-reference** — `app/services/movie_story/README.md`
+  - review whether `native movie_story` is still needed at lines [123]
+- **legacy-native-active-reference** — `app/services/movie_story/unified_entry.py`
+  - review whether `engine_backend` is still needed at lines [151, 152, 153, 195, 196]
+- **legacy-native-active-reference** — `tests/test_movie_story_engine_boundary.py`
+  - review whether `engine_backend` is still needed at lines [13, 24, 48, 52, 53, 54, 56, 73]
+- **legacy-native-active-reference** — `tests/test_movie_story_legacy_understanding_baseline.py`
+  - review whether `movie_story_native_engine` is still needed at lines [11]
+- **legacy-native-active-reference** — `tests/test_movie_story_native_cleanup.py`
+  - review whether `movie_story_native_engine` is still needed at lines [4, 5, 7, 8, 9, 16, 33]
+- **legacy-native-active-reference** — `tests/test_movie_story_native_highlight_engine.py`
+  - review whether `engine_backend` is still needed at lines [67, 77, 94, 98, 99, 119, 123, 124]
+- **legacy-native-active-reference** — `tests/test_movie_story_native_movie_story_engine.py`
+  - review whether `engine_backend` is still needed at lines [11]
+- **legacy-native-active-reference** — `tests/test_movie_story_native_movie_story_engine.py`
+  - review whether `movie_story_native_engine` is still needed at lines [21, 30, 31, 41, 92, 152]
+- **legacy-native-active-reference** — `tests/test_movie_story_native_movie_story_engine.py`
+  - review whether `run_native_movie_story_engine` is still needed at lines [7, 33]
+- **legacy-native-active-reference** — `tests/test_movie_story_unified_entry.py`
+  - review whether `engine_backend` is still needed at lines [84]
+- **legacy-native-active-reference** — `tests/movie_story/test_movie_story_engine_mainflow_gate.py`
+  - review whether `engine_backend` is still needed at lines [10, 16]
+- **legacy-native-active-reference** — `tests/movie_story/test_movie_story_old_native_mainflow_gate.py`
+  - review whether `engine_backend` is still needed at lines [12, 18]
+- **legacy-native-active-reference** — `tests/movie_story/test_movie_story_old_native_mainflow_gate.py`
+  - review whether `movie_story_native_engine` is still needed at lines [35]
+- **legacy-native-active-reference** — `tools/audit_movie_story_native_migration.py`
+  - review whether `native movie_story` is still needed at lines [2]
+- **module-context** — `app/services/movie_story/two_round_feature_modes.py`
+  - missing module-level __CONTEXT__ block
+- **module-header** — `app/services/movie_story/unified_entry.py`
+  - missing standard file header in first two lines
+- **module-context** — `app/services/movie_story/unified_entry.py`
+  - missing module-level __CONTEXT__ block
+- **print-usage** — `audit_aivideo_post_cleanup_contracts.py`
+  - contains print() at lines [272]
+- **logging-module-usage** — `audit_aivideo_post_cleanup_contracts.py`
+  - contains logging module usage at lines [277]
+- **direct-llm-call** — `audit_aivideo_post_cleanup_contracts.py`
+  - contains direct LLM call `litellm.acompletion` at lines [89]; verify it uses project wrapper
+- **direct-llm-call** — `audit_aivideo_post_cleanup_contracts.py`
+  - contains direct LLM call `litellm.completion` at lines [88]; verify it uses project wrapper
+- **direct-llm-call** — `audit_aivideo_post_cleanup_contracts.py`
+  - contains direct LLM call `openai.chat.completions.create` at lines [87]; verify it uses project wrapper
+- **print-usage** — `local_api.py`
+  - contains print() at lines [22, 31]
+- **print-usage** — `patch_aivideo_cleanup_old_visual_evidence.py`
+  - contains print() at lines [455, 457, 459]
+- **print-usage** — `app/config/audio_config.py`
+  - contains print() at lines [215, 220]
+- **print-usage** — `app/services/audio_merger.py`
+  - contains print() at lines [165]
+- **print-usage** — `app/services/audio_normalizer.py`
+  - contains print() at lines [315]
+- **print-usage** — `app/services/clip_video.py`
+  - contains print() at lines [1277]
+- **print-usage** — `app/services/generate_video.py`
+  - contains print() at lines [495]
+- **print-usage** — `app/services/material.py`
+  - contains print() at lines [571, 573]
+- **print-usage** — `app/services/merger_video.py`
+  - contains print() at lines [848]
+- **print-usage** — `app/services/subtitle_merger.py`
+  - contains print() at lines [66, 73, 82, 121, 126, 139, 164, 167, 172]
+- **print-usage** — `app/services/update_script.py`
+  - contains print() at lines [176]
+- **print-usage** — `app/services/llm/config_validator.py`
+  - contains print() at lines [289, 290, 291, 293, 294, 295, 298, 300, 303, 305]
+- **print-usage** — `app/services/llm/test_litellm_integration.py`
+  - contains print() at lines [185]
+- **print-usage** — `app/services/llm/test_llm_service.py`
+  - contains print() at lines [27, 39, 40, 41, 46, 52, 75, 76, 81, 82]
+- **logging-module-usage** — `app/services/movie_story/audit.py`
+  - contains logging module usage at lines [6, 16]
+- **logging-module-usage** — `app/services/movie_story/direct_clean_v11.py`
+  - contains logging module usage at lines [12, 18, 762, 763]
+- **logging-module-usage** — `app/services/movie_story/direct_runtime_v10_fast_visible_audit.py`
+  - contains logging module usage at lines [27, 35]
+- **logging-module-usage** — `app/services/movie_story/direct_runtime_v11_consolidated.py`
+  - contains logging module usage at lines [24, 32]
+- **logging-module-usage** — `app/services/movie_story/direct_runtime_v2.py`
+  - contains logging module usage at lines [8]
+- **logging-module-usage** — `app/services/movie_story/direct_runtime_v4.py`
+  - contains logging module usage at lines [8, 17]
+- **logging-module-usage** — `app/services/movie_story/direct_runtime_v5.py`
+  - contains logging module usage at lines [15, 21]
+- **logging-module-usage** — `app/services/movie_story/direct_runtime_v6.py`
+  - contains logging module usage at lines [17, 25]
+- **logging-module-usage** — `app/services/movie_story/direct_runtime_v8.py`
+  - contains logging module usage at lines [17, 20]
+- **logging-module-usage** — `app/services/movie_story/direct_runtime_v9_audit_visible.py`
+  - contains logging module usage at lines [18, 25]
+- **logging-module-usage** — `app/services/movie_story/story_runtime.py`
+  - contains logging module usage at lines [12, 18]
+- **logging-module-usage** — `app/services/movie_story/timeline_runtime.py`
+  - contains logging module usage at lines [24, 33]
+- **print-usage** — `app/services/SDE/short_drama_explanation.py`
+  - contains print() at lines [734]
+- **print-usage** — `app/services/SDP/utils/step5_merge_script.py`
+  - contains print() at lines [47]
+- **print-usage** — `app/utils/video_processor.py`
+  - contains print() at lines [674]
+- **visual-focus-api-field-mapping** — `app/services/movie_story/two_round_feature_modes.py / app/services/movie_story/two_round_visual_narration.py`
+  - schema exposes movie_story_visual_focus_segments but runtime does not reference that exact API field; verify mapping to internal visual_focus_segments
+

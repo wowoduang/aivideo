@@ -1,0 +1,7 @@
+{
+  "historical_drama": {
+    "title": "双轮结构分析写实解说｜SRT先分析后写作",
+    "description": "第一轮只读字幕提取结构事实，第二轮只基于分析结果写文案，避免字幕复述。",
+    "prompt": "双轮解说链路已启用。\n\n第一轮：读取原始SRT，只做结构分析，不写文案。\n第二轮：只基于第一轮分析结果写文案，不再读取字幕原文。\n\n本模板文件只保留风格说明；正式提示词在 app/services/movie_story/two_round_narration.py。"
+  }
+}

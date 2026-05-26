@@ -1,0 +1,101 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""
+test_scene_boundary_context_api_adapter.py
+
+测试 scene_boundary_context API 适配器。
+"""
+
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from app.services.movie_story.scene_boundary_context_api_adapter import (
+    build_scene_boundary_context_preview_payload,
+)
+
+
+class TestSceneBoundaryContextApiAdapter(unittest.TestCase):
+    """scene_boundary_context API adapter 测试。"""
+
+    def test_build_preview_payload_uses_scene_builder(self) -> None:
+        """合法请求调用旧 scene_builder，并返回 context。"""
+        video_path = Path("tests/tmp_scene_boundary_context_adapter.mp4")
+        video_path.write_bytes(b"fake")
+        try:
+            with patch(
+                "app.services.movie_story.scene_boundary_context_api_adapter.build_scenes",
+                return_value=[
+                    {"scene_id": "scene_001", "start": 0, "end": 10, "keyframe_candidates": [4]},
+                ],
+            ) as mocked:
+                payload = build_scene_boundary_context_preview_payload(
+                    {
+                        "video_path": str(video_path),
+                        "subtitle_segments": [{"start": "00:00:01.000", "end": "00:00:03.000", "text": "测试 字幕"}],
+                        "target_scene_count": 20,
+                        "min_scene_duration": 1.5,
+                        "max_scene_duration": 12,
+                    }
+                )
+
+            self.assertEqual(payload["scene_count"], 1)
+            self.assertEqual(payload["scene_source"]["provider"], "scene_builder")
+            self.assertIn("scene_001", payload["scene_boundary_context"])
+            self.assertIn("00:01~00:03 测试字幕", payload["scene_boundary_context"])
+            mocked.assert_called_once()
+        finally:
+            video_path.unlink(missing_ok=True)
+
+    def test_missing_video_path_raises(self) -> None:
+        """缺少 video_path 直接报错。"""
+        with self.assertRaises(ValueError):
+            build_scene_boundary_context_preview_payload(
+                {"subtitle_segments": [{"start": 0, "end": 1, "text": "x"}]}
+            )
+
+    def test_nonexistent_video_raises(self) -> None:
+        """视频文件不存在直接报错。"""
+        with self.assertRaises(FileNotFoundError):
+            build_scene_boundary_context_preview_payload(
+                {
+                    "video_path": "tests/not_exists_scene_boundary_context.mp4",
+                    "subtitle_segments": [{"start": 0, "end": 1, "text": "x"}],
+                }
+            )
+
+    def test_empty_subtitle_segments_raises(self) -> None:
+        """空字幕片段直接报错。"""
+        video_path = Path("tests/tmp_scene_boundary_context_empty_subs.mp4")
+        video_path.write_bytes(b"fake")
+        try:
+            with self.assertRaises(ValueError):
+                build_scene_boundary_context_preview_payload(
+                    {"video_path": str(video_path), "subtitle_segments": []}
+                )
+        finally:
+            video_path.unlink(missing_ok=True)
+
+    def test_scene_builder_empty_raises(self) -> None:
+        """旧 scene_builder 返回空时直接报错。"""
+        video_path = Path("tests/tmp_scene_boundary_context_empty_scene.mp4")
+        video_path.write_bytes(b"fake")
+        try:
+            with patch(
+                "app.services.movie_story.scene_boundary_context_api_adapter.build_scenes",
+                return_value=[],
+            ):
+                with self.assertRaises(RuntimeError):
+                    build_scene_boundary_context_preview_payload(
+                        {
+                            "video_path": str(video_path),
+                            "subtitle_segments": [{"start": 0, "end": 1, "text": "x"}],
+                        }
+                    )
+        finally:
+            video_path.unlink(missing_ok=True)
+
+
+if __name__ == "__main__":
+    unittest.main()

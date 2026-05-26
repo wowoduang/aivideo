@@ -1,0 +1,47 @@
+[
+  {
+    "stage": "runtime/00_active_movie_story_runtime",
+    "source_stage": "00_active_movie_story_runtime",
+    "producer": "runtime",
+    "dir": ".-workspace\\test_chain_isolation\\scripts\\_movie_story_pipeline_audit_clips\\run_test_legacy_chain_isolation\\runtime\\00_active_movie_story_runtime",
+    "count": 1,
+    "exported": 0,
+    "total_duration": 0.001
+  },
+  {
+    "stage": "runtime/00c_boundary_summary",
+    "source_stage": "00c_boundary_summary",
+    "producer": "runtime",
+    "dir": ".-workspace\\test_chain_isolation\\scripts\\_movie_story_pipeline_audit_clips\\run_test_legacy_chain_isolation\\runtime\\00c_boundary_summary",
+    "count": 1,
+    "exported": 0,
+    "total_duration": 0.001
+  },
+  {
+    "stage": "runtime/01_shot_candidates",
+    "source_stage": "01_shot_candidates",
+    "producer": "runtime",
+    "dir": ".-workspace\\test_chain_isolation\\scripts\\_movie_story_pipeline_audit_clips\\run_test_legacy_chain_isolation\\runtime\\01_shot_candidates",
+    "count": 2,
+    "exported": 0,
+    "total_duration": 20.0
+  },
+  {
+    "stage": "runtime/01a_shot_boundary_video_samples",
+    "source_stage": "01a_shot_boundary_video_samples",
+    "producer": "runtime",
+    "dir": ".-workspace\\test_chain_isolation\\scripts\\_movie_story_pipeline_audit_clips\\run_test_legacy_chain_isolation\\runtime\\01a_shot_boundary_video_samples",
+    "count": 2,
+    "exported": 0,
+    "total_duration": 20.0
+  },
+  {
+    "stage": "runtime/02_scene_candidates",
+    "source_stage": "02_scene_candidates",
+    "producer": "runtime",
+    "dir": ".-workspace\\test_chain_isolation\\scripts\\_movie_story_pipeline_audit_clips\\run_test_legacy_chain_isolation\\runtime\\02_scene_candidates",
+    "count": 2,
+    "exported": 0,
+    "total_duration": 20.0
+  }
+]

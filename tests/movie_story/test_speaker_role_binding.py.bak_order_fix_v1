@@ -1,0 +1,63 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""
+test_speaker_role_binding.py
+
+测试 SPEAKER_ID 预览与角色绑定配置。
+"""
+
+import unittest
+
+from app.services.movie_story.speaker_role_binding import build_speaker_context_config
+from app.services.movie_story.speaker_role_binding import build_speaker_preview
+from app.services.movie_story.speaker_role_binding import normalize_speaker_role_map
+
+
+class TestSpeakerRoleBinding(unittest.TestCase):
+    """说话人角色绑定测试。"""
+
+    def test_build_speaker_preview_groups_by_speaker_id(self) -> None:
+        """能按 SPEAKER_ID 聚合样例和总时长。"""
+        segments = [
+            {"start": 284.0, "end": 288.0, "speaker_id": "SPEAKER_00", "text": "我要天天吃大饼", "confidence": 0.86},
+            {"start": 288.0, "end": 292.0, "speaker_id": "SPEAKER_00", "text": "还要让你们也天天吃", "confidence": 0.84},
+            {"start": 464.0, "end": 472.0, "speaker_id": "SPEAKER_01", "text": "欠税不交", "confidence": 0.82},
+        ]
+
+        preview = build_speaker_preview(segments, max_examples_per_speaker=1)
+
+        self.assertEqual(preview["speaker_count"], 2)
+        self.assertEqual(preview["speakers"][0]["speaker_id"], "SPEAKER_01")
+        self.assertEqual(preview["speakers"][0]["total_duration"], 8.0)
+        self.assertEqual(preview["speakers"][1]["speaker_id"], "SPEAKER_00")
+        self.assertEqual(preview["speakers"][1]["segment_count"], 2)
+        self.assertEqual(len(preview["speakers"][1]["examples"]), 1)
+
+    def test_normalize_speaker_role_map_filters_invalid_items(self) -> None:
+        """角色映射只保留合法 SPEAKER_ID 和非空角色名。"""
+        role_map = {
+            "SPEAKER_00": "朱重八",
+            "1": "母亲",
+            "foo": "乱填",
+            "SPEAKER_03": "",
+        }
+
+        cleaned = normalize_speaker_role_map(role_map, known_speaker_ids=["SPEAKER_00", "SPEAKER_01"])
+
+        self.assertEqual(cleaned, {"SPEAKER_00": "朱重八", "SPEAKER_01": "母亲"})
+
+    def test_build_speaker_context_config(self) -> None:
+        """能构建项目配置结构。"""
+        config = build_speaker_context_config(
+            enabled=True,
+            speaker_role_map={"SPEAKER_00": "朱重八"},
+        )
+
+        self.assertEqual(config["speaker_context_config"]["provider"], "aliyun_funasr")
+        self.assertTrue(config["speaker_context_config"]["enabled"])
+        self.assertEqual(config["speaker_context_config"]["speaker_role_map"], {"SPEAKER_00": "朱重八"})
+
+
+if __name__ == "__main__":
+    unittest.main()

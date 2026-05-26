@@ -1,0 +1,219 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""
+visual_highlight_evidence.py
+
+What this module is:
+- Builds visual evidence packages for final movie_story highlights.
+
+Why it exists:
+- Native/runtime code can provide useful timeline and frame evidence, but the
+  final narration should be written by the two-round narration chain. This
+  module converts final_highlights + sampled keyframes into small visual
+  packages for that chain.
+
+Input:
+- final_highlights
+- keyframe records from visual_frame_sampler
+- optional shot_candidates / scene_candidates
+- optional highlight_narration_segments
+
+Output:
+- visual_evidence_by_highlight records.
+
+Producer:
+- movie_story runtime/native evidence pipeline.
+
+Consumer:
+- two_round_input_packager
+- two_round_narration_chain
+- optional VLM visual relation checker
+
+Formality:
+- FORMAL INPUT PACKAGE BUILDER FOR TWO-ROUND NARRATION.
+
+NOT FOR:
+- generating narration
+- selecting final highlights
+- binding character names
+- inferring character psychology
+- pretending subtitle keyword scores are visual evidence
+
+Failure policy:
+- Missing highlight ids, missing keyframes, or inconsistent highlight alignment
+  raises. Do not silently return partial visual evidence.
+"""
+
+from typing import Any, Mapping, Sequence
+
+
+__all__ = ["build_visual_evidence_by_highlight"]
+
+
+def build_visual_evidence_by_highlight(
+    final_highlights: Sequence[Mapping[str, Any]],
+    keyframes: Sequence[Mapping[str, Any]],
+    *,
+    shot_candidates: Sequence[Mapping[str, Any]] | None = None,
+    scene_candidates: Sequence[Mapping[str, Any]] | None = None,
+    highlight_narration_segments: Sequence[Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Build visual evidence packages aligned to final highlights.
+
+    Input:
+    - final_highlights: formal highlights with highlight_id/start/end.
+    - keyframes: sampled frame records whose source_id equals highlight_id.
+    - shot_candidates / scene_candidates: optional existing runtime boundaries.
+    - highlight_narration_segments: optional subtitle evidence package.
+
+    Output:
+    - visual evidence records aligned by highlight_id.
+
+    NOT FOR:
+    - final highlight selection.
+    - narration generation.
+    - character-name or address-term extraction.
+    - claiming visual facts that were not observed by video/image analysis.
+    """
+    if not final_highlights:
+        raise ValueError("final_highlights must not be empty")
+    if not keyframes:
+        raise ValueError("keyframes must not be empty")
+
+    frames_by_highlight = _group_by_key(keyframes, "source_id")
+    narration_by_highlight = _index_by_highlight_id(highlight_narration_segments or [])
+
+    results: list[dict[str, Any]] = []
+    for highlight in final_highlights:
+        highlight_id = _required_str(highlight, "highlight_id")
+        start = _required_float(highlight, "start")
+        end = _required_float(highlight, "end")
+        if end <= start:
+            raise ValueError(f"invalid highlight window for {highlight_id}: {start}~{end}")
+
+        highlight_frames = list(frames_by_highlight.get(highlight_id) or [])
+        if not highlight_frames:
+            raise RuntimeError(f"missing sampled keyframes for highlight_id={highlight_id}")
+
+        narration_segment = narration_by_highlight.get(highlight_id)
+        results.append(
+            {
+                "highlight_id": highlight_id,
+                "time_range": [start, end],
+                "duration": round(end - start, 3),
+                "highlight_type": highlight.get("highlight_type"),
+                "keyframes": [_normalize_keyframe(frame) for frame in highlight_frames],
+                "overlapping_shot_ids": _overlapping_ids(
+                    shot_candidates or [],
+                    start=start,
+                    end=end,
+                    id_keys=("shot_id", "candidate_id", "id"),
+                ),
+                "overlapping_scene_ids": _overlapping_ids(
+                    scene_candidates or [],
+                    start=start,
+                    end=end,
+                    id_keys=("scene_id", "candidate_id", "id"),
+                ),
+                "subtitle_context": _subtitle_context(narration_segment),
+                "backend_visual_facts": [],
+                "uncertain_points": [
+                    "No character names are inferred by this package.",
+                    "No visual interpretation has been performed unless a VLM checker fills it later.",
+                ],
+                "questions_for_vlm": [
+                    "Which side appears visually dominant or weaker in these frames?",
+                    "Do the frames show confrontation, search, grabbing, chasing, fighting, or ordinary dialogue?",
+                    "Are the same visible people/groups continuous across the sampled frames?",
+                    "Is any important object or action visible that changes the meaning of this highlight?",
+                ],
+            }
+        )
+
+    return results
+
+
+def _normalize_keyframe(frame: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize one sampled keyframe record for two-round input packaging."""
+    return {
+        "time": _required_float(frame, "timestamp"),
+        "frame_path": _required_str(frame, "frame_path"),
+        "reason": str(frame.get("reason") or "sampled_keyframe"),
+        "source_type": str(frame.get("source_type") or "final_highlight"),
+    }
+
+
+def _subtitle_context(segment: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Extract compact subtitle context without inventing visual facts."""
+    if not segment:
+        return {}
+    text = str(
+        segment.get("subtitle_text")
+        or segment.get("source_text")
+        or segment.get("text")
+        or ""
+    ).strip()
+    return {"start": segment.get("start"), "end": segment.get("end"), "text_excerpt": text[:500]}
+
+
+def _group_by_key(records: Sequence[Mapping[str, Any]], key: str) -> dict[str, list[Mapping[str, Any]]]:
+    """Group records by a required string key."""
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
+    for record in records:
+        value = _required_str(record, key)
+        grouped.setdefault(value, []).append(record)
+    return grouped
+
+
+def _index_by_highlight_id(records: Sequence[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
+    """Index records with optional highlight_id."""
+    index: dict[str, Mapping[str, Any]] = {}
+    for record in records:
+        highlight_id = str(record.get("highlight_id") or "").strip()
+        if highlight_id:
+            index[highlight_id] = record
+    return index
+
+
+def _overlapping_ids(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    start: float,
+    end: float,
+    id_keys: Sequence[str],
+) -> list[str]:
+    """Return ids for records whose start/end overlaps the given window."""
+    ids: list[str] = []
+    for record in records:
+        try:
+            record_start = float(record.get("start"))
+            record_end = float(record.get("end"))
+        except Exception:
+            continue
+        if record_end <= start or record_start >= end:
+            continue
+        for key in id_keys:
+            value = str(record.get(key) or "").strip()
+            if value:
+                ids.append(value)
+                break
+    return sorted(set(ids))
+
+
+def _required_str(record: Mapping[str, Any], key: str) -> str:
+    """Read a required non-empty string field."""
+    value = str(record.get(key) or "").strip()
+    if not value:
+        raise KeyError(f"record is missing required non-empty string key: {key}")
+    return value
+
+
+def _required_float(record: Mapping[str, Any], key: str) -> float:
+    """Read a required numeric field."""
+    if key not in record:
+        raise KeyError(f"record is missing required numeric key: {key}")
+    value = record[key]
+    if value in (None, ""):
+        raise ValueError(f"record key {key!r} is empty")
+    return float(value)

@@ -1,0 +1,95 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""
+test_scene_boundary_context_api_adapter.py
+
+测试 scene_boundary_context API 适配器。
+"""
+
+import unittest
+from unittest.mock import patch
+
+from app.services.movie_story.scene_boundary_context_api_adapter import build_scene_boundary_context_preview_payload
+
+
+class TestSceneBoundaryContextApiAdapter(unittest.TestCase):
+    """scene_boundary_context API adapter 测试。"""
+
+    def test_build_preview_payload(self) -> None:
+        """合法请求能调用底层服务并返回 context。"""
+        with patch(
+            "app.services.movie_story.scene_boundary_context_api_adapter.build_scene_boundary_context_from_video",
+            return_value={
+                "scene_count": 1,
+                "shot_detection": {"shot_count": 2},
+                "scene_boundaries": [{"scene_id": "scene_001"}],
+                "scene_boundary_context": "scene_001 | 00:00~00:10 | 10秒",
+            },
+        ) as mocked:
+            payload = build_scene_boundary_context_preview_payload(
+                {
+                    "video_path": "E:/aivideo-workspace/frontend_uploads/video/demo.mp4",
+                    "subtitle_segments": [{"start": 0, "end": 10, "text": "测试"}],
+                    "target_scene_count": 20,
+                    "min_scene_duration": 10,
+                    "max_scene_duration": 60,
+                }
+            )
+
+        self.assertEqual(payload["scene_count"], 1)
+        self.assertIn("scene_001", payload["scene_boundary_context"])
+        mocked.assert_called_once()
+        kwargs = mocked.call_args.kwargs
+        self.assertEqual(kwargs["target_scene_count"], 20)
+        self.assertEqual(kwargs["min_scene_duration"], 10.0)
+        self.assertEqual(kwargs["max_scene_duration"], 60.0)
+
+    def test_missing_video_path_raises(self) -> None:
+        """缺少 video_path 直接报错。"""
+        with self.assertRaises(ValueError):
+            build_scene_boundary_context_preview_payload(
+                {"subtitle_segments": [{"start": 0, "end": 1, "text": "x"}]}
+            )
+
+    def test_empty_subtitle_segments_raises(self) -> None:
+        """空字幕片段直接报错。"""
+        with self.assertRaises(ValueError):
+            build_scene_boundary_context_preview_payload(
+                {"video_path": "demo.mp4", "subtitle_segments": []}
+            )
+
+    def test_invalid_duration_config_raises(self) -> None:
+        """max_scene_duration 小于 min_scene_duration 直接报错。"""
+        with self.assertRaises(ValueError):
+            build_scene_boundary_context_preview_payload(
+                {
+                    "video_path": "demo.mp4",
+                    "subtitle_segments": [{"start": 0, "end": 1, "text": "x"}],
+                    "min_scene_duration": 60,
+                    "max_scene_duration": 10,
+                }
+            )
+
+    def test_empty_context_raises(self) -> None:
+        """底层返回空 context 时直接报错，不静默成功。"""
+        with patch(
+            "app.services.movie_story.scene_boundary_context_api_adapter.build_scene_boundary_context_from_video",
+            return_value={
+                "scene_count": 0,
+                "shot_detection": {},
+                "scene_boundaries": [],
+                "scene_boundary_context": "",
+            },
+        ):
+            with self.assertRaises(RuntimeError):
+                build_scene_boundary_context_preview_payload(
+                    {
+                        "video_path": "demo.mp4",
+                        "subtitle_segments": [{"start": 0, "end": 1, "text": "x"}],
+                    }
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()

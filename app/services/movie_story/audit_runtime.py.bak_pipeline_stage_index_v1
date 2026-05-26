@@ -1,0 +1,412 @@
+from __future__ import annotations
+
+"""Production audit runtime for the movie-story pipeline.
+
+This module centralizes the stage manifest/clip audit logic that used to live
+inside ``subtitle_first_pipeline.py``.  Pipeline code should call
+``_audit_video_snapshot`` and ``_audit_pipeline_marker`` through this module so
+future entry points share the same audit output format and retention policy.
+"""
+
+import csv
+import json
+import os
+import shutil
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+from loguru import logger
+
+from app.utils import utils
+from app.services.process_control import run_cancellable
+
+
+def _audit_config_value_v41(key, default=None):
+    try:
+        from app.config import config as _app_config
+        app_cfg = getattr(_app_config, "app", None)
+        if isinstance(app_cfg, dict) and key in app_cfg:
+            return app_cfg.get(key)
+        if app_cfg is not None and hasattr(app_cfg, key):
+            return getattr(app_cfg, key)
+        if isinstance(_app_config, dict):
+            if key in _app_config:
+                return _app_config.get(key)
+            if isinstance(_app_config.get("app"), dict):
+                return _app_config["app"].get(key, default)
+    except Exception as _e:
+        logger.debug("配置读取失败，返回 default: {}", _e)
+    return default
+
+
+def _audit_bool_v41(key, env, default=True):
+    import os
+    v = _audit_config_value_v41(key, None)
+    if v is None:
+        v = os.environ.get(env)
+    if v is None:
+        return default
+    return str(v).strip().lower() in {"1", "true", "yes", "on", "enable", "enabled"}
+
+
+def _audit_int_v41(key, env, default):
+    import os
+    v = _audit_config_value_v41(key, None)
+    if v is None:
+        v = os.environ.get(env)
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+
+def _audit_time_to_seconds_v41(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(",", ".")
+    if not text:
+        return None
+    try:
+        parts = text.split(":")
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + float(parts[1])
+        return float(text)
+    except Exception:
+        return None
+
+
+def _audit_item_range_v41(item):
+    if not isinstance(item, dict):
+        return None, None, "not_dict"
+    for sk, ek, name in [
+        ("video_start", "video_end", "video_start_end"),
+        ("clip_start", "clip_end", "clip_start_end"),
+        ("start", "end", "start_end"),
+        ("semantic_start", "semantic_end", "semantic_start_end"),
+    ]:
+        if item.get(sk) is not None and item.get(ek) is not None:
+            try:
+                s = float(item.get(sk))
+                e = float(item.get(ek))
+                if e > s >= 0:
+                    return s, e, name
+            except Exception as _e:
+                logger.debug("时间字段解析失败，跳过: {}", _e)
+    for k, name in [("timestamp", "timestamp"), ("semantic_timestamp", "semantic_timestamp"), ("source_timestamp", "source_timestamp")]:
+        val = item.get(k)
+        if val and "-" in str(val):
+            left, right = str(val).split("-", 1)
+            s = _audit_time_to_seconds_v41(left)
+            e = _audit_time_to_seconds_v41(right)
+            if s is not None and e is not None and e > s:
+                return s, e, name
+    return None, None, "missing"
+
+
+def _audit_brief_v41(item, idx):
+    if not isinstance(item, dict):
+        return {"idx": idx, "value": str(item)[:500]}
+    s, e, source = _audit_item_range_v41(item)
+    return {
+        "idx": idx,
+        "id": item.get("_id") or item.get("id") or item.get("segment_id") or item.get("scene_id") or item.get("highlight_id"),
+        "start": s,
+        "end": e,
+        "duration": round(e - s, 3) if s is not None and e is not None and e > s else item.get("duration"),
+        "time_source": source,
+        "timestamp": item.get("timestamp") or item.get("semantic_timestamp") or item.get("source_timestamp"),
+        "source_timestamp": item.get("source_timestamp"),
+        "semantic_timestamp": item.get("semantic_timestamp"),
+        "plot_function": item.get("plot_function"),
+        "importance_level": item.get("importance_level"),
+        "block_type": item.get("block_type"),
+        "llm_highlight_selected": item.get("llm_highlight_selected"),
+        "highlight_filter_selected": item.get("highlight_filter_selected"),
+        "raw_voice_retain": item.get("raw_voice_retain") or item.get("llm_raw_voice_keep") or item.get("raw_voice_retain_suggestion"),
+        "OST": item.get("OST"),
+        "score": item.get("highlight_score") or item.get("final_story_score"),
+        "narration": str(item.get("narration") or "")[:220],
+        "text": str(item.get("source_text") or item.get("subtitle_text") or item.get("main_text_evidence") or "")[:280],
+        "reasons": item.get("highlight_reasons") or item.get("llm_window_reasons") or item.get("drop_reason"),
+        "surface_dialogue_meaning": str(item.get("surface_dialogue_meaning") or "")[:220],
+        "real_narrative_state": str(item.get("real_narrative_state") or "")[:260],
+        "conflict_summary": str(item.get("conflict_summary") or "")[:220],
+        "character_motivation": str(item.get("character_motivation") or "")[:220],
+        "story_function": str(item.get("story_function") or "")[:180],
+        "narration_intent": str((item.get("narration_intent") or {}).get("intent") if isinstance(item.get("narration_intent"), dict) else item.get("narration_intent") or "")[:260],
+        "evidence_score": (item.get("evidence_completeness") or {}).get("score") if isinstance(item.get("evidence_completeness"), dict) else None,
+        "evidence_passed": (item.get("evidence_completeness") or {}).get("passed") if isinstance(item.get("evidence_completeness"), dict) else None,
+        "global_main_conflict": str((item.get("_global_summary") or {}).get("main_conflict") if isinstance(item.get("_global_summary"), dict) else "")[:220],
+    }
+
+
+def _audit_stage_namespace_and_name_v41(namespace: str, stage: str) -> tuple[str, str]:
+    """Resolve native-engine audit namespace and stage name.
+
+    This is audit-output organization only. It does not change business data.
+
+    PRODUCER namespace:
+    - pipeline: movie_story_native_engine business pipeline snapshots.
+
+    FORMALITY:
+    - pipeline/05_final_highlights is the formal native-engine highlight snapshot.
+    - 04a/04b/04c/04e traced stages are TRACE / DEBUG names, not stable
+      product-stage contracts.
+    """
+    raw_namespace = str(namespace or "pipeline").strip() or "pipeline"
+    raw_stage = str(stage or "unknown_stage").strip() or "unknown_stage"
+
+    namespace_map = {
+        "pipeline": {
+            "03_story_candidates": "03_plot_evidence_candidates",
+            "04_global_story_context": "04_pipeline_global_story_context",
+            "05_selected_highlights": "05_final_highlights",
+            "06a_evidence_completeness": "06a_pipeline_evidence_completeness",
+        },
+    }
+
+    mapped_stage = namespace_map.get(raw_namespace, {}).get(raw_stage, raw_stage)
+    safe_namespace = "".join(c if c.isalnum() or c in "._-" else "_" for c in raw_namespace)[:80]
+    safe_stage = "".join(c if c.isalnum() or c in "._-" else "_" for c in mapped_stage)[:120]
+    return safe_namespace, safe_stage
+
+
+def _audit_source_video_v41(local_vars):
+    for key in ("video_path", "video_origin_path"):
+        if local_vars.get(key):
+            return str(local_vars.get(key))
+    params = local_vars.get("params")
+    if params is not None:
+        for key in ("video_origin_path", "video_path"):
+            value = getattr(params, key, None)
+            if value:
+                return str(value)
+    return ""
+
+
+def _audit_root_v41(local_vars):
+    """Resolve audit root from explicit task/output path only.
+
+    Failure policy:
+    Missing output_script_path/output_path/audit_root is a configuration error.
+    Do not infer audit output from video_path.parent, because that writes files
+    under frontend_uploads/video and splits one frontend job into multiple roots.
+    """
+    from pathlib import Path
+
+    for key in ("audit_root", "audit_dir"):
+        value = local_vars.get(key)
+        if value not in (None, ""):
+            path = Path(str(value))
+            if path.name == "_movie_story_pipeline_audit_clips":
+                return path
+            return path / "_movie_story_pipeline_audit_clips"
+
+    for key in ("output_script_path", "script_path", "output_path"):
+        value = local_vars.get(key)
+        if value not in (None, ""):
+            path = Path(str(value))
+            return (path.parent if path.suffix else path) / "_movie_story_pipeline_audit_clips"
+
+    for key in ("output_dir", "task_dir", "project_dir", "workspace_dir"):
+        value = local_vars.get(key)
+        if value not in (None, ""):
+            return Path(str(value)) / "_movie_story_pipeline_audit_clips"
+
+    raise RuntimeError(
+        "movie_story audit root requires output_script_path/output_path/audit_root; "
+        "refusing to infer from video_path or frontend_uploads/video"
+    )
+
+def _audit_run_dir_v41(root):
+    import os, time
+    run_id = os.environ.get("AIVIDEO_AUDIT_RUN_ID", "").strip()
+    if not run_id:
+        run_id = time.strftime("run_%Y%m%d_%H%M%S")
+        os.environ["AIVIDEO_AUDIT_RUN_ID"] = run_id
+    return root / run_id
+
+
+def _audit_cleanup_v41(root):
+    try:
+        keep = max(1, _audit_int_v41("movie_story_audit_keep_runs", "AIVIDEO_AUDIT_KEEP_RUNS", 2))
+        runs = [p for p in root.glob("run_*") if p.is_dir()]
+        runs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in runs[keep:]:
+            shutil.rmtree(old, ignore_errors=True)
+    except Exception as exc:
+        logger.warning("清理旧审计视频失败: {}", exc)
+
+
+def _audit_export_clip_v41(video_path, output_path, start, end):
+    try:
+        import subprocess
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        duration = max(float(end) - float(start), 0.1)
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-ss", f"{float(start):.3f}", "-i", video_path, "-t", f"{duration:.3f}",
+            "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast",
+            "-crf", "25", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(output_path),
+        ]
+        result = run_cancellable(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False, timeout=max(30, int(duration) + 30))
+        if result.returncode != 0:
+            logger.warning("导出审计片段失败: {} | {}", output_path, (result.stderr or "")[:500])
+            return False
+        return True
+    except Exception as exc:
+        logger.warning("导出审计片段异常: {} | {}", output_path, exc)
+        return False
+
+
+def _audit_video_snapshot(stage, items, local_vars):
+    policy_allows_clip_export = True
+    try:
+        from pathlib import Path as _AuditPath
+        from app.services.movie_story.audit_policy import (
+            should_export_clips as _ms_should_export_clips,
+            should_skip_stage as _ms_should_skip_stage,
+        )
+        _ms_stage_name = str(stage or "")
+        _ms_include_legacy = bool(local_vars.get("use_legacy_understanding")) or str(
+            local_vars.get("movie_story_strategy") or ""
+        ).strip().lower().replace("-", "_") in {
+            "legacy_understanding",
+            "legacy",
+            "old",
+            "old_understanding",
+            "subtitle_first",
+            "deep_understanding",
+        }
+        if _ms_should_skip_stage(_ms_stage_name, include_legacy=_ms_include_legacy):
+            return _AuditPath("_skipped")
+        policy_allows_clip_export = bool(_ms_should_export_clips(_ms_stage_name))
+    except Exception:
+        policy_allows_clip_export = True
+
+    try:
+        export_clips_enabled = _audit_bool_v41("movie_story_audit_export_clips", "AIVIDEO_AUDIT_EXPORT_CLIPS", False)
+        if not policy_allows_clip_export:
+            export_clips_enabled = False
+        if not isinstance(items, list):
+            return
+        video_path = _audit_source_video_v41(local_vars)
+        if export_clips_enabled and (not video_path or not os.path.exists(video_path)):
+            logger.warning("跳过视频片段导出，仅写 manifest：找不到原视频路径 stage={}, video_path={}", stage, video_path)
+            export_clips_enabled = False
+
+        root = _audit_root_v41(local_vars)
+        run_dir = _audit_run_dir_v41(root)
+        _audit_cleanup_v41(root)
+
+        stage_namespace, safe_stage = _audit_stage_namespace_and_name_v41("pipeline", stage)
+        stage_dir = run_dir / stage_namespace / safe_stage
+        stage_index_name = f"{stage_namespace}/{safe_stage}"
+        clips_dir = stage_dir / "clips"
+        clips_dir.mkdir(parents=True, exist_ok=True)
+
+        max_n = max(1, _audit_int_v41("movie_story_audit_max_clips_per_stage", "AIVIDEO_AUDIT_MAX_CLIPS_PER_STAGE", 80))
+        rows = []
+        exported = 0
+        for idx, item in enumerate(items[:max_n], start=1):
+            if not isinstance(item, dict):
+                continue
+            s, e, time_source = _audit_item_range_v41(item)
+            brief = _audit_brief_v41(item, idx)
+            if s is None or e is None or e <= s:
+                brief["exported"] = False
+                brief["export_error"] = "missing_time_range"
+                rows.append(brief)
+                continue
+            if export_clips_enabled:
+                clip_name = f"{idx:03d}_{str(brief.get('id') or 'segment')[:40].replace('/', '_').replace(chr(92), '_')}_{s:.3f}_{e:.3f}.mp4"
+                clip_path = clips_dir / clip_name
+                ok = _audit_export_clip_v41(video_path, clip_path, s, e)
+                brief["clip_path"] = str(clip_path)
+                brief["exported"] = ok
+                if ok:
+                    exported += 1
+            else:
+                brief["clip_path"] = ""
+                brief["exported"] = False
+                brief["export_error"] = "clip_export_disabled_manifest_only"
+            brief["time_source"] = time_source
+            rows.append(brief)
+
+        import csv, json
+        total_duration = 0.0
+        for x in items:
+            if isinstance(x, dict):
+                s, e, _ = _audit_item_range_v41(x)
+                if s is not None and e is not None and e > s:
+                    total_duration += e - s
+        manifest = {
+            "stage": stage_index_name, "source_stage": stage, "producer": stage_namespace,
+            "source_video": video_path,
+            "count": len(items),
+            "exported": exported,
+            "max_export": max_n,
+            "total_duration": round(total_duration, 3),
+            "items": rows,
+        }
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        (stage_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Full records are required by migration verification; manifest rows are
+        # deliberately brief and CSV-friendly.
+        (stage_dir / "items_full.json").write_text(json.dumps(items or [], ensure_ascii=False, indent=2), encoding="utf-8")
+        if rows:
+            fieldnames = list(rows[0].keys())
+            with (stage_dir / "manifest.csv").open("w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+
+        index_path = run_dir / "_stage_index.json"
+        try:
+            index = json.loads(index_path.read_text(encoding="utf-8")) if index_path.exists() else []
+        except Exception:
+            index = []
+        index.append({
+            "stage": stage,
+            "dir": str(stage_dir),
+            "manifest": str(stage_dir / "manifest.json"),
+            "csv": str(stage_dir / "manifest.csv"),
+            "count": len(items),
+            "exported": exported,
+            "total_duration": round(total_duration, 3),
+        })
+        index_path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        readme = run_dir / "README.txt"
+        if not readme.exists():
+            readme.write_text(
+                "影视解说每一步筛选结果视频审计目录。每个阶段一个文件夹，clips/ 是该阶段视频片段。默认保留最近 2 次 run。",
+                encoding="utf-8",
+            )
+        logger.warning("已写入阶段审计: stage={}, count={}, exported={}, dir={}", stage, len(items), exported, stage_dir)
+    except Exception as exc:
+        logger.warning("阶段视频审计失败: stage={}, error={}", stage, exc)
+
+
+def _audit_pipeline_marker(stage: str, payload: Dict[str, Any], local_vars: Dict[str, Any]) -> None:
+    try:
+        start = float(payload.get("start", 0.0) or 0.0)
+        end = float(payload.get("end", start + 0.001) or (start + 0.001))
+        if end <= start:
+            end = start + 0.001
+        _audit_video_snapshot(stage, [{
+            "candidate_id": stage,
+            "candidate_type": "pipeline_marker",
+            "start": start,
+            "end": end,
+            "duration": round(end - start, 3),
+            "timestamp": f"{utils.format_time(start)}-{utils.format_time(end)}",
+            "text": json.dumps(payload, ensure_ascii=False)[:800],
+            "score": 1.0,
+        }], local_vars)
+    except Exception as exc:
+        logger.warning("pipeline marker audit skipped: {} {}", stage, exc)

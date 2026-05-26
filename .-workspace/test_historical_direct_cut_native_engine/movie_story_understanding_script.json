@@ -1,0 +1,260 @@
+{
+  "artifact": "movie_story_understanding_script",
+  "movie_story_strategy": "legacy_understanding",
+  "pipeline": "legacy_movie_story_understanding_first",
+  "full_subtitle_understanding": {
+    "subtitle_understanding_status": "direct_cut_first",
+    "subtitle_input_mode": "direct_cut_first_subtitle_timeline",
+    "segment_count": 3,
+    "highlight_windows": [
+      {
+        "start": 0.0,
+        "end": 15.0,
+        "segment_id": "subtitle_0001"
+      },
+      {
+        "start": 15.0,
+        "end": 35.0,
+        "segment_id": "subtitle_0002"
+      },
+      {
+        "start": 35.0,
+        "end": 60.0,
+        "segment_id": "subtitle_0003"
+      }
+    ]
+  },
+  "global_story_understanding": {
+    "arc": "direct_cut_first",
+    "main_storyline": "历史剧快速版：先按字幕时间轴裁剪原片，解说后续再补。",
+    "video_title": "",
+    "full_subtitle_understanding": {
+      "subtitle_understanding_status": "direct_cut_first",
+      "subtitle_input_mode": "direct_cut_first_subtitle_timeline",
+      "segment_count": 3,
+      "highlight_windows": [
+        {
+          "start": 0.0,
+          "end": 15.0,
+          "segment_id": "subtitle_0001"
+        },
+        {
+          "start": 15.0,
+          "end": 35.0,
+          "segment_id": "subtitle_0002"
+        },
+        {
+          "start": 35.0,
+          "end": 60.0,
+          "segment_id": "subtitle_0003"
+        }
+      ]
+    }
+  },
+  "segment_understandings": [
+    {
+      "segment_id": "subtitle_0001",
+      "scene_id": "subtitle_0001",
+      "timestamp": "00:00:00,000-00:00:15,000",
+      "start": 0.0,
+      "end": 15.0,
+      "duration": 15.0,
+      "subtitle_text": "a",
+      "surface_dialogue_meaning": null,
+      "real_narrative_state": null,
+      "plot_function": "历史剧快速粗切",
+      "importance_level": "medium",
+      "emotion_hint": null,
+      "local_understanding": {},
+      "legacy_segment_understanding": {},
+      "story_validation": {},
+      "llm_highlight_selected": true,
+      "llm_window_selected": false,
+      "llm_raw_voice_keep": true,
+      "narration_intent": {},
+      "evidence_completeness": {},
+      "frame_paths": [],
+      "visual_summary": []
+    },
+    {
+      "segment_id": "subtitle_0002",
+      "scene_id": "subtitle_0002",
+      "timestamp": "00:00:15,000-00:00:35,000",
+      "start": 15.0,
+      "end": 35.0,
+      "duration": 20.0,
+      "subtitle_text": "b",
+      "surface_dialogue_meaning": null,
+      "real_narrative_state": null,
+      "plot_function": "历史剧快速粗切",
+      "importance_level": "medium",
+      "emotion_hint": null,
+      "local_understanding": {},
+      "legacy_segment_understanding": {},
+      "story_validation": {},
+      "llm_highlight_selected": true,
+      "llm_window_selected": false,
+      "llm_raw_voice_keep": true,
+      "narration_intent": {},
+      "evidence_completeness": {},
+      "frame_paths": [],
+      "visual_summary": []
+    },
+    {
+      "segment_id": "subtitle_0003",
+      "scene_id": "subtitle_0003",
+      "timestamp": "00:00:35,000-00:01:00,000",
+      "start": 35.0,
+      "end": 60.0,
+      "duration": 25.0,
+      "subtitle_text": "c",
+      "surface_dialogue_meaning": null,
+      "real_narrative_state": null,
+      "plot_function": "历史剧快速粗切",
+      "importance_level": "medium",
+      "emotion_hint": null,
+      "local_understanding": {},
+      "legacy_segment_understanding": {},
+      "story_validation": {},
+      "llm_highlight_selected": true,
+      "llm_window_selected": false,
+      "llm_raw_voice_keep": true,
+      "narration_intent": {},
+      "evidence_completeness": {},
+      "frame_paths": [],
+      "visual_summary": []
+    }
+  ],
+  "story_validation": [],
+  "llm_highlight_plan": {
+    "plan_policy": "direct_cut_first_no_highlight_filter",
+    "selected_segment_ids": [
+      "subtitle_0001",
+      "subtitle_0002",
+      "subtitle_0003"
+    ],
+    "raw_voice_segment_ids": [
+      "subtitle_0001",
+      "subtitle_0002",
+      "subtitle_0003"
+    ]
+  },
+  "story_highlights": [
+    {
+      "_id": 1,
+      "segment_id": "subtitle_0001",
+      "scene_id": "subtitle_0001",
+      "highlight_id": "subtitle_0001",
+      "highlight_rank": 1,
+      "start": 0.0,
+      "end": 15.0,
+      "duration": 15.0,
+      "timestamp": "00:00:00,000-00:00:15,000",
+      "subtitle_text": "a",
+      "main_text_evidence": "a",
+      "source_text": "a",
+      "picture": "a",
+      "plot_function": "历史剧快速粗切",
+      "importance_level": "medium",
+      "llm_highlight_selected": true,
+      "highlight_filter_selected": true,
+      "llm_raw_voice_keep": true,
+      "raw_voice_retain": true,
+      "raw_voice_retain_suggestion": true,
+      "direct_cut_source": "subtitle_segment"
+    },
+    {
+      "_id": 2,
+      "segment_id": "subtitle_0002",
+      "scene_id": "subtitle_0002",
+      "highlight_id": "subtitle_0002",
+      "highlight_rank": 2,
+      "start": 15.0,
+      "end": 35.0,
+      "duration": 20.0,
+      "timestamp": "00:00:15,000-00:00:35,000",
+      "subtitle_text": "b",
+      "main_text_evidence": "b",
+      "source_text": "b",
+      "picture": "b",
+      "plot_function": "历史剧快速粗切",
+      "importance_level": "medium",
+      "llm_highlight_selected": true,
+      "highlight_filter_selected": true,
+      "llm_raw_voice_keep": true,
+      "raw_voice_retain": true,
+      "raw_voice_retain_suggestion": true,
+      "direct_cut_source": "subtitle_segment"
+    },
+    {
+      "_id": 3,
+      "segment_id": "subtitle_0003",
+      "scene_id": "subtitle_0003",
+      "highlight_id": "subtitle_0003",
+      "highlight_rank": 3,
+      "start": 35.0,
+      "end": 60.0,
+      "duration": 25.0,
+      "timestamp": "00:00:35,000-00:01:00,000",
+      "subtitle_text": "c",
+      "main_text_evidence": "c",
+      "source_text": "c",
+      "picture": "c",
+      "plot_function": "历史剧快速粗切",
+      "importance_level": "medium",
+      "llm_highlight_selected": true,
+      "highlight_filter_selected": true,
+      "llm_raw_voice_keep": true,
+      "raw_voice_retain": true,
+      "raw_voice_retain_suggestion": true,
+      "direct_cut_source": "subtitle_segment"
+    }
+  ],
+  "narration_script": [
+    {
+      "_id": 1,
+      "segment_id": "historical_fast_cut_001",
+      "scene_id": "historical_fast_cut_001",
+      "highlight_id": "historical_fast_cut_001",
+      "timestamp": "00:00:00,000-00:01:00,000",
+      "start": 0.0,
+      "end": 60.0,
+      "duration": 60.0,
+      "picture": "a",
+      "narration": "",
+      "OST": 1,
+      "plot_function": "历史剧快速粗切",
+      "importance_level": "medium",
+      "validator_status": null,
+      "narration_validation": {
+        "status": "skipped",
+        "issues": [
+          "direct_cut_first_use_original_audio"
+        ]
+      },
+      "movie_story_validation": {},
+      "evidence_refs": [
+        "historical_fast_cut_001"
+      ],
+      "main_text_evidence": "a b c"
+    }
+  ],
+  "understanding_baseline_report": {
+    "pipeline": "direct_cut_first_subtitle_time",
+    "movie_story_strategy": "legacy_understanding",
+    "status": "passed",
+    "passed": true,
+    "issues": [],
+    "counts": {
+      "segments": 3,
+      "script_items": 1
+    }
+  },
+  "counts": {
+    "segments": 3,
+    "segment_understandings": 0,
+    "story_validation": 0,
+    "story_highlights": 3,
+    "narration_script": 1
+  }
+}

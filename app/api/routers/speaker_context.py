@@ -1,0 +1,107 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""
+speaker_context.py
+
+说话人识别相关 API router。
+
+本 router 只负责 HTTP 入参/出参，不做业务逻辑。
+业务逻辑在 app.services.movie_story.speaker_context_api_adapter。
+"""
+
+__CONTEXT__ = {
+    "layer": "api_router",
+    "domain": "movie_story.speaker_context",
+    "entry_points": [
+        "build_speaker_preview",
+        "build_bound_speaker_context",
+        "build_speaker_context",
+    ],
+    "called_by": ["app.api.main"],
+    "decisions": [
+        "2026-05: route 只调用 speaker_context_api_adapter，不堆业务逻辑。",
+        "2026-05: 先暴露 preview / bound-context / context 三个纯数据接口。",
+    ],
+    "pending": [
+        "后续接入 project_id，读取任务目录中的 Fun-ASR JSON。",
+        "后续接入项目配置保存 speaker_role_map。",
+    ],
+    "ai_constraints": [
+        "禁止在路由中从字幕文本推断角色名。",
+        "禁止在路由中调用 LLM。",
+        "禁止在路由中修改合成链。",
+    ],
+}
+
+from collections.abc import Callable
+from typing import Any
+
+from fastapi import APIRouter
+from fastapi import HTTPException
+from loguru import logger
+
+from app.api.schemas.speaker_context import SpeakerBoundContextRequest
+from app.api.schemas.speaker_context import SpeakerContextRequest
+from app.api.schemas.speaker_context import SpeakerContextResponse
+from app.api.schemas.speaker_context import SpeakerPreviewRequest
+from app.api.schemas.speaker_context import FunasrSpeakerPreviewRequest
+from app.services.movie_story.speaker_context_api_adapter import build_bound_context_response
+from app.services.movie_story.speaker_context_api_adapter import build_context_response
+from app.services.movie_story.speaker_context_api_adapter import build_preview_response
+from app.services.movie_story.funasr_speaker_diarization import build_funasr_speaker_preview_from_audio
+
+
+router = APIRouter(prefix="/speaker-context", tags=["speaker-context"])
+
+
+@router.post("/preview", response_model=SpeakerContextResponse)
+def build_speaker_preview(payload: SpeakerPreviewRequest) -> dict[str, Any]:
+    """生成 SPEAKER_ID 预览，供前端绑定角色名。"""
+    return _guard(lambda: build_preview_response(_model_to_dict(payload)))
+
+
+@router.post("/bound-context", response_model=SpeakerContextResponse)
+def build_bound_speaker_context(payload: SpeakerBoundContextRequest) -> dict[str, Any]:
+    """根据前端提交的 SPEAKER_ID -> 角色名映射生成最终 speaker_context。"""
+    return _guard(lambda: build_bound_context_response(_model_to_dict(payload)))
+
+
+@router.post("/context", response_model=SpeakerContextResponse)
+def build_speaker_context(payload: SpeakerContextRequest) -> dict[str, Any]:
+    """一次性生成 speaker_preview + speaker_context，适合调试或已有角色映射的项目。"""
+    return _guard(lambda: build_context_response(_model_to_dict(payload)))
+
+
+@router.post("/funasr-preview", response_model=SpeakerContextResponse)
+def build_funasr_speaker_preview(payload: FunasrSpeakerPreviewRequest) -> dict[str, Any]:
+    """复用现有百炼 OSS/filetrans 链路自动生成 SPEAKER_ID 预览。"""
+    return _guard(
+        lambda: {
+            "ok": True,
+            "data": build_funasr_speaker_preview_from_audio(
+                payload.audio_path,
+                max_examples_per_speaker=payload.max_examples_per_speaker,
+            ),
+        }
+    )
+
+
+def _guard(handler: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """把业务异常转换为 HTTP 400。"""
+    try:
+        return handler()
+    except ValueError as exc:
+        logger.warning("speaker_context API 参数错误: {}", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _model_to_dict(model: Any) -> dict[str, Any]:
+    """兼容 Pydantic v1 / v2。"""
+    if hasattr(model, "model_dump"):
+        data = model.model_dump()
+    else:
+        data = model.dict()
+    if not isinstance(data, dict):
+        raise ValueError("请求模型无法转换为 dict")
+    return data

@@ -1,0 +1,12 @@
+[
+  {
+    "candidate_id": "04a_llm_highlight_plan_error",
+    "candidate_type": "pipeline_marker",
+    "start": 0.0,
+    "end": 0.001,
+    "duration": 0.001,
+    "timestamp": "00:00:00,000-00:00:00,001",
+    "text": "{\"scene_evidence_count\": 1, \"llm_enabled\": false, \"elapsed_seconds\": 0.0, \"error\": \"AssertionError: assert False is True\", \"stage\": \"04a_llm_highlight_plan\", \"status\": \"error\", \"wall_time\": \"2026-05-26 10:22:42\"}",
+    "score": 1.0
+  }
+]

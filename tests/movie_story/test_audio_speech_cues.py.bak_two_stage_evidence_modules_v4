@@ -1,0 +1,21 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""Tests for audio_speech_cues."""
+
+from app.services.movie_story.audio_speech_cues import build_speech_turn_cues_for_highlights
+
+
+def test_build_speech_turn_cues_for_highlights_counts_compact_turns() -> None:
+    result = build_speech_turn_cues_for_highlights(
+        [{"highlight_id": "highlight_001", "start": 10.0, "end": 20.0}],
+        [
+            {"start": 10.0, "end": 11.0, "speaker_id": "SPEAKER_00"},
+            {"start": 11.0, "end": 12.0, "speaker_id": "SPEAKER_00"},
+            {"start": 12.0, "end": 13.0, "speaker_id": "SPEAKER_01"},
+        ],
+    )
+
+    assert result[0]["speaker_ids"] == ["SPEAKER_00", "SPEAKER_01"]
+    assert result[0]["speaker_turn_sequence"] == ["SPEAKER_00", "SPEAKER_01"]
+    assert result[0]["speaker_turn_count"] == 2

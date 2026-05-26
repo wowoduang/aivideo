@@ -1,0 +1,2 @@
+﻿idx,id,start,end,duration,time_source,timestamp,source_timestamp,semantic_timestamp,plot_function,importance_level,block_type,llm_highlight_selected,highlight_filter_selected,raw_voice_retain,OST,score,narration,text,reasons,surface_dialogue_meaning,real_narrative_state,conflict_summary,character_motivation,story_function,narration_intent,evidence_score,evidence_passed,global_main_conflict,clip_path,exported,export_error
+1,,0.0,0.001,0.001,start_end,"00:00:00,000-00:00:00,001",,,,,,,,,,,,,,,,,,,,,,,,False,clip_export_disabled_manifest_only

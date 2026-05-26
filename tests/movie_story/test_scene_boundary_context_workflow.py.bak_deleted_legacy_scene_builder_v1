@@ -1,0 +1,118 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""
+test_scene_boundary_context_workflow.py
+
+测试 scene_boundary_context 本地规则工作流。
+"""
+
+import unittest
+
+from app.services.movie_story.scene_boundary_context_workflow import build_scene_boundary_payload
+from app.services.movie_story.scene_boundary_context_workflow import build_scene_boundaries
+
+
+class TestSceneBoundaryContextWorkflow(unittest.TestCase):
+    """scene_boundary_context 工作流测试。"""
+
+    def test_without_visual_anchor_does_not_invent_facts(self) -> None:
+        """没有视觉锚点时，不能从字幕编造画面事实。"""
+        payload = build_scene_boundary_payload(
+            subtitle_segments=[
+                {"start": 0, "end": 10, "text": "欠税不交就拿稻种喂马"},
+                {"start": 70, "end": 80, "text": "娘 我一定会回来"},
+            ],
+            shot_boundaries=[
+                {"start": 0, "end": 40},
+                {"start": 40, "end": 90},
+            ],
+            target_scene_count=2,
+            min_scene_duration=20,
+            max_scene_duration=90,
+        )
+
+        context = payload["scene_boundary_context"]
+        self.assertEqual(payload["scene_count"], 2)
+        self.assertIn("画面事实：未提供视觉锚点，不能从字幕推断画面事实", context)
+        self.assertIn("覆盖字幕：", context)
+        self.assertIn("00:00~00:10 欠税不交就拿稻种喂马", context)
+        self.assertIn("01:10~01:20 娘我一定会回来", context)
+        self.assertNotIn("字幕关键词：", context)
+        self.assertNotIn("字幕摘录：", context)
+        self.assertNotIn("欠税 不交", context)
+
+    def test_with_visual_anchor(self) -> None:
+        """有视觉锚点时，能格式化画面事实、在场人物和原始字幕。"""
+        payload = build_scene_boundary_payload(
+            subtitle_segments=[
+                {"start": 464, "end": 472, "text": "欠税不交 稻种拿去喂马"},
+                {"start": 480, "end": 488, "text": "求官爷开恩"},
+            ],
+            shot_boundaries=[
+                {"start": 460, "end": 490},
+            ],
+            visual_anchors=[
+                {
+                    "time": 472,
+                    "description": "官兵靠近屋内物品",
+                    "confidence": 0.76,
+                    "people": [{"name": "官兵", "confidence": 0.86}, {"name": "母亲", "confidence": 0.78}],
+                }
+            ],
+            target_scene_count=1,
+            min_scene_duration=10,
+            max_scene_duration=60,
+        )
+
+        context = payload["scene_boundary_context"]
+        self.assertIn("scene_001 | 07:40~08:10 | 30秒", context)
+        self.assertIn("在场人物：官兵(0.86) 母亲(0.78)", context)
+        self.assertIn("画面事实：官兵靠近屋内物品", context)
+        self.assertIn("画面锚点：07:52 官兵靠近屋内物品(0.76)", context)
+        self.assertIn("覆盖字幕：", context)
+        self.assertIn("07:44~07:52 欠税不交稻种拿去喂马", context)
+        self.assertIn("08:00~08:08 求官爷开恩", context)
+
+    def test_subtitles_are_ordered_by_time_and_not_rewritten(self) -> None:
+        """覆盖字幕必须按时间排序，保留原字幕原文，不抽词。"""
+        payload = build_scene_boundary_payload(
+            subtitle_segments=[
+                {"start": 20, "end": 22, "text": "第三句 原文"},
+                {"start": 0, "end": 2, "text": "第一句 原文"},
+                {"start": 10, "end": 12, "text": "第二句 原文"},
+            ],
+            shot_boundaries=[{"start": 0, "end": 30}],
+            target_scene_count=1,
+            min_scene_duration=5,
+            max_scene_duration=60,
+        )
+
+        context = payload["scene_boundary_context"]
+        first = context.index("00:00~00:02 第一句原文")
+        second = context.index("00:10~00:12 第二句原文")
+        third = context.index("00:20~00:22 第三句原文")
+        self.assertLess(first, second)
+        self.assertLess(second, third)
+        self.assertNotIn("第一句 原文 第二句", context)
+        self.assertNotIn("字幕关键词：", context)
+
+    def test_split_long_scene_by_subtitles(self) -> None:
+        """过长场景会被字幕时间继续拆分。"""
+        subtitles = [
+            {"start": second, "end": second + 5, "text": f"片段{second}"}
+            for second in range(0, 420, 60)
+        ]
+        scenes = build_scene_boundaries(
+            subtitle_segments=subtitles,
+            shot_boundaries=[{"start": 0, "end": 420}],
+            min_scene_duration=30,
+            max_scene_duration=150,
+        )
+
+        self.assertGreaterEqual(len(scenes), 2)
+        self.assertTrue(all(scene.duration <= 150 for scene in scenes))
+
+
+if __name__ == "__main__":
+    unittest.main()

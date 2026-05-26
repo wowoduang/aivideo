@@ -1,0 +1,1037 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""
+story_runtime.py
+Single active rule: audio/subtitle protected timeline with typed highlight selection.
+01_plot_chunks video_start/video_end is authoritative.
+Downstream stages must inherit time. If time changes, raise RuntimeError and write timing_mismatch_report.csv.
+"""
+
+import csv
+import logging
+import re
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+logger = logging.getLogger(__name__)
+
+from app.services.movie_story import timeline_runtime as rt
+from app.services.movie_story import highlight_planning
+from app.services.movie_story import narration_contract
+from app.services.movie_story import understanding_quality
+from app.services.movie_story import understanding_writeback
+from app.services.movie_story.evidence_enrichment import (
+    build_global_story_context,
+    enrich_evidence_items,
+    evaluate_evidence_items,
+)
+
+_LAST_PLOT_MAP: Dict[str, Tuple[float, float]] = {}
+_LAST_PLOT_ITEMS: List[Dict[str, Any]] = []
+_LAST_STAGE_A_GLOBAL_CONTEXT: Dict[str, Any] = {}
+
+
+def _to_seconds(value, default=None):
+    try:
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value).strip().replace(",", ".")
+        if not text:
+            return default
+        parts = text.split(":")
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + float(parts[1])
+        return float(text)
+    except Exception:
+        return default
+
+
+def _fmt(seconds: float) -> str:
+    try:
+        return rt.fmt(float(seconds))
+    except Exception:
+        seconds = max(0.0, float(seconds or 0.0))
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = seconds - h * 3600 - m * 60
+        return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
+
+
+def _parse_range(text):
+    text = str(text or "").strip()
+    if "-" not in text:
+        return None, None
+    left, right = text.split("-", 1)
+    s = _to_seconds(left)
+    e = _to_seconds(right)
+    if s is None or e is None or e <= s:
+        return None, None
+    return round(float(s), 3), round(float(e), 3)
+
+
+def first_list_arg(*args, **kwargs):
+    """
+    Return the authoritative scene list.
+
+    In the clean single-rule pipeline, 01_plot_chunks is the authoritative
+    scene source. Some old pipeline calls may pass later filtered lists into
+    evidence/highlight planning functions. If we accept those lists, scenes
+    can shrink before scoring.
+
+    Selection order:
+    1. Prefer provided list with best overlap with _LAST_PLOT_MAP.
+    2. If provided best list is shorter than _LAST_PLOT_ITEMS, use _LAST_PLOT_ITEMS.
+    3. Fallback to _LAST_PLOT_ITEMS or first provided list.
+    """
+    candidates = []
+    for x in args:
+        if isinstance(x, list):
+            candidates.append(x)
+    for x in kwargs.values():
+        if isinstance(x, list):
+            candidates.append(x)
+
+    if not candidates:
+        return list(_LAST_PLOT_ITEMS) if _LAST_PLOT_ITEMS else []
+
+    if _LAST_PLOT_MAP:
+        best = None
+        best_score = -1
+        for lst in candidates:
+            overlap = 0
+            for idx, item in enumerate(lst or [], start=1):
+                if not isinstance(item, dict):
+                    continue
+                keys = [
+                    item.get("segment_id"),
+                    item.get("scene_id"),
+                    item.get("candidate_id"),
+                    item.get("id"),
+                    f"idx_{idx:04d}",
+                ]
+                if any(k and str(k) in _LAST_PLOT_MAP for k in keys):
+                    overlap += 1
+            score = overlap * 100000 + len(lst or [])
+            if score > best_score:
+                best_score = score
+                best = lst
+
+        if _LAST_PLOT_ITEMS and best is not None and len(best or []) < len(_LAST_PLOT_ITEMS):
+            return list(_LAST_PLOT_ITEMS)
+
+        if best is not None and best_score > 0:
+            return best
+
+    if _LAST_PLOT_ITEMS:
+        return list(_LAST_PLOT_ITEMS)
+
+    return candidates[0]
+
+
+def start_end(item: Dict[str, Any]) -> Tuple[float, float]:
+    for sk, ek in (
+        ("video_start", "video_end"),
+        ("start", "end"),
+        ("semantic_start", "semantic_end"),
+        ("source_start", "source_end"),
+    ):
+        try:
+            s = item.get(sk)
+            e = item.get(ek)
+            if s is not None and e is not None and float(e) > float(s):
+                return round(float(s), 3), round(float(e), 3)
+        except Exception as _e:
+            logger.debug("数值转换失败，跳过: {}", _e)
+
+    for key in ("timestamp", "semantic_timestamp", "source_timestamp"):
+        s, e = _parse_range(item.get(key))
+        if s is not None and e is not None:
+            return s, e
+
+    s = _to_seconds(item.get("start"), 0.0) or 0.0
+    e = _to_seconds(item.get("end"), s + 1.0) or (s + 1.0)
+    if e <= s:
+        e = s + 1.0
+    return round(float(s), 3), round(float(e), 3)
+
+
+def text_of(item: Dict[str, Any]) -> str:
+    return str(
+        item.get("subtitle_text")
+        or item.get("source_text")
+        or item.get("main_text_evidence")
+        or item.get("text")
+        or item.get("narration")
+        or ""
+    ).strip()
+
+
+def key_of(item: Dict[str, Any], idx: int) -> str:
+    return str(
+        item.get("segment_id")
+        or item.get("scene_id")
+        or item.get("candidate_id")
+        or item.get("highlight_id")
+        or item.get("id")
+        or f"idx_{idx:04d}"
+    )
+
+
+def normalize_item(item: Dict[str, Any], idx: int = 0, candidate_type: str | None = None) -> Dict[str, Any]:
+    cur = dict(item or {})
+    s, e = start_end(cur)
+    ts = f"{_fmt(s)}-{_fmt(e)}"
+    text = text_of(cur)
+    base = key_of(cur, idx)
+
+    cur["candidate_id"] = cur.get("candidate_id") or base
+    cur["segment_id"] = cur.get("segment_id") or base
+    cur["scene_id"] = cur.get("scene_id") or base
+    cur["id"] = cur.get("id") or base
+    if candidate_type:
+        cur["candidate_type"] = candidate_type
+
+    cur["start"] = s
+    cur["end"] = e
+    cur["video_start"] = s
+    cur["video_end"] = e
+    cur["semantic_start"] = s
+    cur["semantic_end"] = e
+    cur["source_start"] = s
+    cur["source_end"] = e
+    cur["duration"] = round(max(0.0, e - s), 3)
+    cur["timestamp"] = ts
+    cur["semantic_timestamp"] = ts
+    cur["source_timestamp"] = ts
+
+    cur["subtitle_text"] = text
+    cur["source_text"] = text
+    cur["main_text_evidence"] = text
+    cur["text"] = text
+
+    score = cur.get("highlight_score")
+    if score is None:
+        score = cur.get("score")
+    if score is None and isinstance(cur.get("scores"), dict):
+        score = cur["scores"].get("highlight_score")
+    cur["highlight_score"] = score
+    cur["score"] = score
+
+    cur["time_policy"] = "scene_video_start_end_authoritative"
+    return cur
+
+
+def normalize_list(items: List[Dict[str, Any]], candidate_type: str | None = None) -> List[Dict[str, Any]]:
+    out = []
+    for idx, item in enumerate(items or [], start=1):
+        cur = normalize_item(item, idx, candidate_type=candidate_type)
+        if float(cur["end"]) > float(cur["start"]):
+            out.append(cur)
+    return out
+
+
+def _store_plot_map(items: List[Dict[str, Any]]) -> None:
+    global _LAST_PLOT_MAP, _LAST_PLOT_ITEMS
+    _LAST_PLOT_ITEMS = normalize_list(items, candidate_type="scene")
+    _LAST_PLOT_MAP = {}
+    for idx, item in enumerate(_LAST_PLOT_ITEMS, start=1):
+        base_time = start_end(item)
+        for alt in (key_of(item, idx), item.get("scene_id"), item.get("candidate_id"), item.get("segment_id"), item.get("id")):
+            if alt:
+                _LAST_PLOT_MAP[str(alt)] = base_time
+
+
+_AUDITED_CLEAN_STAGES = set()
+
+
+def _audit(stage: str, items: List[Dict[str, Any]], metadata=None, export_clips=None):
+
+    # ===== production movie-story audit policy BEGIN =====
+    try:
+        from pathlib import Path as _AuditPath
+        from app.services.movie_story.audit_policy import should_skip_stage as _ms_should_skip_stage, should_export_clips as _ms_should_export_clips
+        _ms_stage_name = str(stage or "")
+        if _ms_should_skip_stage(_ms_stage_name):
+            return _AuditPath("_skipped")
+        if not _ms_should_export_clips(_ms_stage_name):
+            export_clips = False
+    except Exception as _e:
+        logger.warning("操作失败（已捕获）: {}", _e)
+    # ===== production movie-story audit policy END =====
+    """
+    Clean stages are diagnostic tables. Do not export duplicate clips here.
+
+    Reason:
+    The legacy visible stages such as 01_plot_chunks / 02_scene_evidence /
+    04_story_highlights / 10_before_filter_script_items already export videos.
+    Exporting the same clips again under *_runtime wastes a lot of time and disk.
+    """
+    try:
+        first_start = 0.0
+        last_end = 0.0
+        if items:
+            first_start = round(float((items[0] or {}).get("start", 0.0) or 0.0), 3)
+            last_end = round(float((items[-1] or {}).get("end", 0.0) or 0.0), 3)
+        key = (stage, len(items or []), first_start, last_end)
+
+        if stage.endswith("_runtime") or "runtime" in stage or stage.endswith("_authoritative"):
+            if key in _AUDITED_CLEAN_STAGES:
+                return None
+            _AUDITED_CLEAN_STAGES.add(key)
+            if export_clips is None:
+                export_clips = False
+
+        return rt.audit_stage(
+            stage,
+            items or [],
+            getattr(rt, "_LAST_VIDEO_PATH", "") or "",
+            getattr(rt, "_LAST_OUTPUT_PATH", "") or "",
+            metadata or {},
+            export_clips=export_clips,
+            namespace="story_audit",
+        )
+    except Exception as exc:
+        logger.warning("movie-story runtime audit skipped: stage=%s error=%s", stage, exc)
+        return None
+
+
+
+def _stage_a_global_context(items: List[Dict[str, Any]], *, video_title: str = "") -> Dict[str, Any]:
+    """Build and audit the Stage-A global story context for the active runtime.
+
+    The previous Stage-A patch only wrote 04_global_story_context from the
+    subtitle-first branch.  Real frontend runs often pass through this runtime
+    adapter, so the verifier saw 03/05 but no 04/06.  This helper makes global
+    context a runtime-level contract rather than a branch-specific side effect.
+    """
+    global _LAST_STAGE_A_GLOBAL_CONTEXT
+    try:
+        ctx = build_global_story_context(items, {}, _LAST_STAGE_A_GLOBAL_CONTEXT, video_title=video_title)
+    except Exception as exc:
+        logger.warning("Stage-A global context build failed; using minimal context: %s", exc)
+        ctx = build_global_story_context(items, {}, {}, video_title=video_title)
+    _LAST_STAGE_A_GLOBAL_CONTEXT = dict(ctx or {})
+    start = float(items[0].get("start", 0.0) or 0.0) if items else 0.0
+    row = {
+        "candidate_id": "global_story_context",
+        "candidate_type": "global_story_context",
+        "start": start,
+        "end": start + 0.001,
+        "video_start": start,
+        "video_end": start + 0.001,
+        "timestamp": f"{_fmt(start)}-{_fmt(start + 0.001)}",
+        "subtitle_text": str(ctx.get("main_conflict") or "global_story_context"),
+        "text": str(ctx.get("main_conflict") or "global_story_context"),
+        "main_conflict": ctx.get("main_conflict"),
+        "story_theme": ctx.get("story_theme"),
+        "genre": ctx.get("genre"),
+        "main_characters": ctx.get("main_characters"),
+        "timeline_summary": ctx.get("timeline_summary"),
+        "migration_quality": ctx.get("migration_quality"),
+        "global_context": ctx,
+    }
+    _audit("04_global_story_context", [row], {"source": "stage_a_runtime_global_context", "migration_stage": "stage_a"}, export_clips=False)
+    return ctx
+
+
+def _stage_a_enrich(items: List[Dict[str, Any]], global_context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    try:
+        return enrich_evidence_items(items or [], global_context)
+    except Exception as exc:
+        logger.warning("Stage-A evidence enrichment failed; returning normalized items: %s", exc)
+        return list(items or [])
+
+
+def _stage_a_build_narration_evidence(
+    highlights: List[Dict[str, Any]],
+    scenes: List[Dict[str, Any]],
+    global_context: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Create the Stage-A rich evidence audit output from selected highlights.
+
+    This is not final narration generation.  It is the contract proving that the
+    old project's global/local understanding layer has been attached before the
+    writer stage.  The evidence intentionally keeps authoritative highlight
+    time windows unchanged.
+    """
+    by_id: Dict[str, Dict[str, Any]] = {}
+    for scene in scenes or []:
+        for key in (scene.get("scene_id"), scene.get("segment_id"), scene.get("candidate_id"), scene.get("id")):
+            if key:
+                by_id[str(key)] = scene
+
+    evidence: List[Dict[str, Any]] = []
+    for idx, h in enumerate(highlights or [], start=1):
+        cur = dict(h or {})
+        source = None
+        for key in (cur.get("scene_id"), cur.get("segment_id"), cur.get("candidate_id")):
+            if key and str(key) in by_id:
+                source = by_id[str(key)]
+                break
+        if source:
+            merged = dict(source)
+            merged.update({k: v for k, v in cur.items() if v not in (None, "", [], {})})
+        else:
+            merged = cur
+        merged["highlight_id"] = merged.get("highlight_id") or cur.get("highlight_id") or f"highlight_{idx:03d}"
+        merged["candidate_type"] = "narration_evidence"
+        evidence.append(merged)
+
+    evidence = enrich_evidence_items(evidence, global_context)
+    completeness = evaluate_evidence_items(evidence)
+    _audit("06_scene_evidence_for_narration", evidence, {
+        "source": "stage_a_runtime_highlight_evidence",
+        "migration_stage": "stage_a",
+        "evidence_count": len(evidence),
+        "pass_rate": completeness.get("pass_rate"),
+        "overall_passed": completeness.get("overall_passed"),
+    }, export_clips=False)
+    marker_start = float(evidence[0].get("start", 0.0) or 0.0) if evidence else 0.0
+    _audit("06a_evidence_completeness", [{
+        "candidate_id": "stage_a_evidence_completeness",
+        "candidate_type": "audit_marker",
+        "start": marker_start,
+        "end": marker_start + 0.001,
+        "video_start": marker_start,
+        "video_end": marker_start + 0.001,
+        "timestamp": f"{_fmt(marker_start)}-{_fmt(marker_start + 0.001)}",
+        "subtitle_text": "Stage-A evidence completeness",
+        "text": "Stage-A evidence completeness",
+        "evidence_completeness_report": completeness,
+    }], completeness, export_clips=False)
+    return evidence
+
+
+def _report_path() -> Path:
+    try:
+        base = rt.audit_base(getattr(rt, "_LAST_VIDEO_PATH", ""), getattr(rt, "_LAST_OUTPUT_PATH", ""))
+        return base / f"timing_mismatch_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+    except Exception:
+        return Path(".") / f"timing_mismatch_{int(time.time())}.csv"
+
+
+def assert_same_as_plot(stage: str, items: List[Dict[str, Any]]) -> None:
+    if not _LAST_PLOT_MAP:
+        return
+
+    mismatches = []
+    for idx, item in enumerate(items or [], start=1):
+        k = key_of(item, idx)
+        src = _LAST_PLOT_MAP.get(k)
+        if src is None:
+            for alt in (item.get("scene_id"), item.get("candidate_id"), item.get("segment_id"), item.get("id")):
+                if alt and str(alt) in _LAST_PLOT_MAP:
+                    src = _LAST_PLOT_MAP[str(alt)]
+                    break
+        if src is None:
+            continue
+
+        s, e = start_end(item)
+        ps, pe = src
+        if abs(s - ps) > 0.01 or abs(e - pe) > 0.01:
+            mismatches.append({
+                "stage": stage,
+                "key": k,
+                "plot_start": ps,
+                "plot_end": pe,
+                "current_start": s,
+                "current_end": e,
+                "delta_start": round(s - ps, 3),
+                "delta_end": round(e - pe, 3),
+                "text": text_of(item)[:160],
+            })
+
+    if mismatches:
+        path = _report_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(mismatches[0].keys()))
+            writer.writeheader()
+            writer.writerows(mismatches)
+        raise RuntimeError(f"movie-story timing mismatch at {stage}: {len(mismatches)} rows. report={path}")
+
+
+def build_authoritative_plot_chunks(segments, *args, **kwargs):
+    chunks = rt.build_authoritative_plot_chunks(segments, *args, **kwargs)
+    chunks = normalize_list(chunks, candidate_type="scene")
+    _store_plot_map(chunks)
+    _audit("01_plot_chunks_authoritative", chunks, {"source": "audio_protected_timeline_authoritative"})
+    return chunks
+
+
+
+
+def refresh_authoritative_plot_map(items: List[Dict[str, Any]], stage: str = "plot_chunks_refreshed") -> List[Dict[str, Any]]:
+    """Refresh the authoritative plot map after a legitimate boundary-alignment stage.
+
+    The pipeline may snap plot chunks to subtitle/visual boundaries after the
+    initial runtime segmentation.  That change is still authoritative, so the
+    downstream timing lock must compare against the refreshed map instead of
+    the pre-alignment map.
+    """
+    normalized = normalize_list(items or [], candidate_type="scene")
+    _store_plot_map(normalized)
+    _audit(stage, normalized, {"source": "authoritative_plot_map_refresh"})
+    return normalized
+
+
+def scene_evidence_passthrough(scene_items, *args, **kwargs):
+    evidence = normalize_list(scene_items, candidate_type="scene")
+    assert_same_as_plot("02_scene_evidence", evidence)
+    for item in evidence:
+        item["evidence_policy"] = "pass_through_from_scene_candidates_no_retiming"
+        item["selected_for_final_story"] = True
+    _audit("02_scene_evidence_passthrough", evidence, {"source": "scene_candidates_passthrough"})
+    return evidence
+
+
+def keep_scene_evidence(scene_evidence, *args, **kwargs):
+    evidence = normalize_list(scene_evidence, candidate_type="scene")
+    assert_same_as_plot("select_final_story_evidence", evidence)
+    for item in evidence:
+        item["selected_for_final_story"] = True
+        item["final_story_drop_reason"] = ""
+        item["stage2_policy"] = "runtime_keep_all_no_retiming"
+    return evidence
+
+
+def strength(value="") -> str:
+    """
+    Highlight strength.
+
+    Explicit config wins:
+        movie_story_highlight_strength = all / loose / balanced / strong / strict
+
+    If no explicit config is set, default to loose for debugging the clean
+    single-rule pipeline. Do not inherit hidden balanced values from old callers.
+    """
+    explicit = rt.cfg("movie_story_highlight_strength", None)
+    raw = str(explicit if explicit not in (None, "") else "loose").lower().strip()
+    aliases = {
+        "全部": "all", "全保留": "all",
+        "宽松": "loose", "弱": "loose",
+        "均衡": "balanced", "中": "balanced",
+        "强": "strong",
+        "严格": "strict",
+    }
+    raw = aliases.get(raw, raw)
+    return raw if raw in {"all", "loose", "balanced", "strong", "strict"} else "loose"
+
+
+def threshold_cap(strength_name: str, n: int):
+    if strength_name == "all":
+        return -1.0, max(n, 1), 1.0
+    if strength_name == "strict":
+        return float(rt.cfg("movie_story_strict_threshold", 0.68) or 0.68), int(rt.cfg("movie_story_strict_max_keep_count", 35) or 35), 0.0
+    if strength_name == "strong":
+        return float(rt.cfg("movie_story_strong_threshold", 0.58) or 0.58), int(rt.cfg("movie_story_strong_max_keep_count", 60) or 60), 0.0
+    if strength_name == "balanced":
+        return float(rt.cfg("movie_story_balanced_threshold", 0.48) or 0.48), int(rt.cfg("movie_story_balanced_max_keep_count", 90) or 90), 0.0
+    return float(rt.cfg("movie_story_loose_threshold", 0.34) or 0.34), int(rt.cfg("movie_story_loose_max_keep_count", 500) or 500), float(rt.cfg("movie_story_loose_min_keep_ratio", 0.35) or 0.35)
+
+
+def _simple_score(item: Dict[str, Any]):
+    try:
+        return rt.score_item(item)
+    except Exception:
+        text = text_of(item)
+        score = 0.36 if text else 0.1
+        return {
+            "story_score": score,
+            "character_score": 0.3 if text else 0.0,
+            "information_score": 0.1,
+            "emotion_score": 0.05,
+            "visual_score": 0.25,
+            "audio_score": 0.05,
+            "continuity_score": 0.5,
+            "penalty": 0.0,
+            "highlight_score": score,
+        }, ["fallback_score"]
+
+
+def build_story_candidates(scene_evidence: List[Dict[str, Any]]):
+    """
+    Story grouping for audit only. It never rewrites scene boundaries.
+
+    Previous behavior was too coarse: one story could contain several story beats.
+    This version splits more locally by:
+    - explicit transition words;
+    - obvious topic shift between adjacent scenes;
+    - accumulated scene count;
+    - accumulated text length.
+
+    Important:
+    The output story windows are only for story-level audit.
+    Final highlight/video windows still use the original scene windows.
+    """
+    scenes = normalize_list(scene_evidence, candidate_type="scene")
+    global_context = _stage_a_global_context(scenes)
+    scenes = _stage_a_enrich(scenes, global_context)
+    assert_same_as_plot("03_story_candidates_input", scenes)
+
+    stories = []
+    buf = []
+    text_len = 0
+    last_text = ""
+
+    break_words = [
+        "第二天", "几天后", "后来", "与此同时", "另一边", "回到",
+        "转眼", "此时", "随后", "晚上", "次日", "另一头",
+        "过了一会儿", "没过多久", "这时", "这时候",
+    ]
+    strong_turn_words = [
+        "突然", "没想到", "原来", "真相", "决定", "下令", "发现",
+        "质问", "威胁", "救", "杀", "逃", "抓", "跪", "哭",
+    ]
+
+    def zh_chars(text):
+        return {c for c in str(text or "") if "\u4e00" <= c <= "\u9fff"}
+
+    def jaccard(a, b):
+        aa, bb = zh_chars(a), zh_chars(b)
+        if not aa or not bb:
+            return 1.0
+        return len(aa & bb) / max(1, len(aa | bb))
+
+    def has_break_word(text):
+        return any(x in text for x in break_words)
+
+    def has_strong_turn(text):
+        return any(x in text for x in strong_turn_words)
+
+    def should_start_new_story(cur_text):
+        if not buf:
+            return False
+
+        scene_count = len(buf)
+        similarity = jaccard(last_text, cur_text)
+
+        # Clear transition: split once the previous story has at least some content.
+        if has_break_word(cur_text) and text_len >= 40:
+            return True
+
+        # Strong plot turn after some accumulated context.
+        if has_strong_turn(cur_text) and text_len >= 120 and scene_count >= 2:
+            return True
+
+        # Topic drift: the adjacent scene shares too little vocabulary with previous scene.
+        # Require enough accumulated text to avoid cutting every short reaction shot.
+        if similarity < 0.10 and text_len >= 100 and scene_count >= 2:
+            return True
+
+        # Do not allow a story audit group to swallow too many scenes.
+        if scene_count >= 4:
+            return True
+
+        # Text-based soft cap. This is not a video time rule; it only prevents
+        # several story beats from being hidden in one audit story row.
+        if text_len >= 220:
+            return True
+
+        return False
+
+    def flush():
+        nonlocal buf, text_len, last_text
+        if not buf:
+            return
+        idx = len(stories) + 1
+        s = float(buf[0]["video_start"])
+        e = float(buf[-1]["video_end"])
+        ts = f"{_fmt(s)}-{_fmt(e)}"
+        text = " ".join(text_of(x) for x in buf if text_of(x)).strip()
+        stories.append({
+            "candidate_id": f"story_{idx:04d}",
+            "candidate_type": "story",
+            "story_id": f"story_{idx:04d}",
+            "start": s,
+            "end": e,
+            "video_start": s,
+            "video_end": e,
+            "semantic_start": s,
+            "semantic_end": e,
+            "source_start": s,
+            "source_end": e,
+            "duration": round(max(0.0, e - s), 3),
+            "timestamp": ts,
+            "semantic_timestamp": ts,
+            "source_timestamp": ts,
+            "scene_ids": [x.get("scene_id") for x in buf],
+            "segment_ids": [x.get("segment_id") for x in buf],
+            "children_count": len(buf),
+            "source_text": text,
+            "subtitle_text": text,
+            "text": text,
+            "merge_policy": "story_merge_audit_only_finer_semantic_groups_no_retiming",
+        })
+        buf = []
+        text_len = 0
+        last_text = ""
+
+    for scene in scenes:
+        txt = text_of(scene)
+        if should_start_new_story(txt):
+            flush()
+        buf.append(scene)
+        text_len += len(txt)
+        if txt:
+            last_text = txt
+
+    flush()
+    _audit("03_story_candidates", stories, {"source": "finer_story_merge_audit_only_no_retiming"})
+    return stories
+
+
+def extract_highlights(scene_evidence, cut_points=None, highlight_selectivity="loose", *args, **kwargs):
+    """Select typed story highlights only.
+
+    This function must not generate narration as a side effect. The main
+    subtitle-first pipeline converts the selected highlights into rich evidence
+    and then calls the legacy LLM narration engine exactly once.
+    """
+    from app.services.movie_story import highlight_selection
+
+    def _cfg_float(key, default):
+        try:
+            from app.config import config as app_config
+            app = getattr(app_config, "app", None)
+            if isinstance(app, dict) and key in app:
+                return float(app.get(key, default))
+            if app is not None and hasattr(app, key):
+                return float(getattr(app, key))
+            if isinstance(app_config, dict):
+                if key in app_config:
+                    return float(app_config.get(key, default))
+                if isinstance(app_config.get("app"), dict):
+                    return float(app_config["app"].get(key, default))
+        except Exception as _e:
+            logger.debug("数值转换失败，跳过: {}", _e)
+        return float(default)
+
+    def _cfg_int(key, default):
+        try:
+            return int(round(_cfg_float(key, default)))
+        except Exception:
+            return int(default)
+
+    def _cfg_str(key, default=""):
+        try:
+            from app.config import config as app_config
+            app = getattr(app_config, "app", None)
+            if isinstance(app, dict) and key in app:
+                return str(app.get(key, default) or default)
+            if app is not None and hasattr(app, key):
+                return str(getattr(app, key) or default)
+            if isinstance(app_config, dict):
+                if key in app_config:
+                    return str(app_config.get(key, default) or default)
+                if isinstance(app_config.get("app"), dict):
+                    return str(app_config["app"].get(key, default) or default)
+        except Exception as _e:
+            logger.debug("配置字段读取失败，返回 default: {}", _e)
+        return str(default or "")
+
+    scenes = normalize_list(scene_evidence, candidate_type="scene")
+    global_context = _stage_a_global_context(scenes)
+    scenes = _stage_a_enrich(scenes, global_context)
+    assert_same_as_plot("extract_typed_highlights_input", scenes)
+    stories = build_story_candidates(scenes)
+    st = strength(highlight_selectivity)
+
+    scored_scenes = []
+    for idx, scene in enumerate(scenes, start=1):
+        cur = normalize_item(scene, idx, candidate_type="scene")
+        scores, reasons = _simple_score(cur)
+        score = float(scores.get("highlight_score") or 0.0)
+        cur.update({
+            "scores": scores,
+            "highlight_score": score,
+            "score": score,
+            "selection_reasons": reasons,
+            "selected": False,
+            "drop_reason": "not_typed_yet",
+            "highlight_strength": st,
+        })
+        scored_scenes.append(cur)
+
+    min_conf = _cfg_float("movie_story_typed_min_confidence", 0.52)
+    fallback_conf = _cfg_float("movie_story_typed_fallback_confidence", 0.45)
+    min_base = _cfg_float("movie_story_typed_min_base_score", 0.18)
+    target_items = _cfg_int("movie_story_typed_target_items", 45)
+    quotas = highlight_selection.parse_type_quotas(_cfg_str("movie_story_typed_type_quotas", ""))
+
+    try:
+        typed_candidates = highlight_selection.build_typed_candidates(
+            scored_scenes,
+            stories,
+            min_confidence=min_conf,
+            fallback_confidence=fallback_conf,
+        )
+        audited, meta = highlight_selection.select_by_type_pools(
+            typed_candidates,
+            quotas=quotas,
+            min_confidence=min_conf,
+            fallback_confidence=fallback_conf,
+            min_base_score=min_base,
+            target_items=target_items,
+        )
+        audited = highlight_selection.sort_chronological(audited)
+        selected_clips = highlight_selection.merge_selected_records(audited)
+        selected_clips = highlight_selection.sort_chronological(selected_clips)
+    except Exception as exc:
+        error_policy = _cfg_str("movie_story_typed_selector_error_policy", "raise").strip().lower()
+        if error_policy not in {"fallback", "score_fallback", "local_fallback"}:
+            logger.exception("typed highlight selection failed; raising because movie_story_typed_selector_error_policy=%s", error_policy or "raise")
+            raise RuntimeError(f"typed_highlight_selection_failed: {exc}") from exc
+
+        logger.warning("typed highlight selection failed; explicit score fallback enabled: %s", exc)
+        ranked = sorted(scored_scenes, key=lambda x: float(x.get("highlight_score") or x.get("score") or 0.0), reverse=True)
+        if not ranked:
+            ranked = list(scenes)
+        keep_n = max(1, min(int(target_items or 45), len(ranked)))
+        selected_clips = sorted(ranked[:keep_n], key=lambda x: start_end(x)[0] or 0.0)
+        audited = []
+        for rank, item in enumerate(selected_clips, start=1):
+            cur = dict(item)
+            cur["selected"] = True
+            cur["selection_rank"] = rank
+            cur["drop_reason"] = "typed_selector_failed_score_fallback_explicit"
+            cur.setdefault("highlight_type", cur.get("plot_function") or "剧情高光")
+            cur.setdefault("highlight_type_key", "score_fallback")
+            audited.append(cur)
+        meta = {
+            "selection_policy": "score_fallback_after_typed_selector_error_explicit",
+            "error": str(exc),
+            "target_items": target_items,
+        }
+    meta.update({
+        "source_scene_count": len(scenes),
+        "source_story_count": len(stories),
+        "selected_clip_count": len(selected_clips),
+        "selected_type_distribution": highlight_selection.type_distribution(selected_clips),
+        "selection_policy": "typed_highlight_pools",
+        "time_policy": "no_duration_cap_no_density_gap",
+        "output_order": "chronological_movie_time",
+        "narration_stage": "main_pipeline_legacy_llm",
+    })
+    _audit("04_typed_highlight_candidates", audited, meta, export_clips=False)
+
+    highlights = []
+    for idx, src in enumerate(selected_clips, start=1):
+        s, e = start_end(src)
+        s, e = float(s or 0.0), float(e or 0.0)
+        ts = f"{_fmt(s)}-{_fmt(e)}"
+        scene_id = src.get("scene_id") or src.get("segment_id") or src.get("candidate_id") or f"scene_{idx:04d}"
+        story_id = src.get("parent_story_id") or src.get("story_id")
+        scores = src.get("scores") or {}
+        text = text_of(src)
+        score = float(src.get("highlight_score") or scores.get("highlight_score") or src.get("score") or 0.0)
+        details = src.get("type_details") or []
+        hints = []
+        for detail in details:
+            hint = detail.get("narration_hint")
+            if hint and hint not in hints:
+                hints.append(hint)
+        highlights.append({
+            "highlight_id": f"highlight_{idx:03d}",
+            "highlight_rank": src.get("selection_rank") or idx,
+            "selection_rank": src.get("selection_rank"),
+            "narration_order": idx,
+            "movie_order": idx,
+            "candidate_type": "highlight",
+            "story_id": story_id,
+            "parent_story_id": story_id,
+            "parent_story_start": src.get("parent_story_start"),
+            "parent_story_end": src.get("parent_story_end"),
+            "parent_story_text": src.get("parent_story_text") or src.get("parent_story_summary"),
+            "scene_ids": [scene_id],
+            "segment_ids": [scene_id],
+            "evidence_ids": [scene_id],
+            "scene_id": scene_id,
+            "start": s,
+            "end": e,
+            "video_start": s,
+            "video_end": e,
+            "semantic_start": s,
+            "semantic_end": e,
+            "source_start": s,
+            "source_end": e,
+            "duration": round(max(0.0, e - s), 3),
+            "timestamp": ts,
+            "semantic_timestamp": ts,
+            "source_timestamp": ts,
+            "source_text": text,
+            "subtitle_text": text,
+            "text": text,
+            "plot_functions": [src.get("plot_function")] if src.get("plot_function") else [],
+            "highlight_type": src.get("highlight_type"),
+            "highlight_type_key": src.get("highlight_type_key"),
+            "highlight_types": src.get("highlight_types") or [src.get("highlight_type")],
+            "highlight_type_keys": src.get("highlight_type_keys") or [src.get("highlight_type_key")],
+            "type_confidence": src.get("type_confidence"),
+            "type_details": details,
+            "type_evidence": src.get("type_evidence") or [],
+            "evidence_text": src.get("evidence_text") or text[:120],
+            "narration_hint": "；".join(hints) if hints else src.get("narration_hint"),
+            "highlight_reasons": src.get("selection_reasons") or src.get("highlight_reasons") or [],
+            "highlight_score": score,
+            "score": score,
+            "scores": scores,
+            "llm_highlight_selected": False,
+            "highlight_filter_selected": True,
+            "highlight_selectivity": highlight_selectivity,
+            "highlight_strength": st,
+            "selected": True,
+            "selection_policy": "typed_highlight_pools",
+            "time_policy": "no_duration_cap_no_density_gap",
+            "narration_policy": "existing_full_plot_narration_chain_after_selection",
+        })
+
+    highlights = highlight_selection.sort_chronological(highlights)
+    highlights = _stage_a_enrich(highlights, global_context)
+
+    # Stage B migrates the old project's story-aware highlight planning layer.
+    # It is still token-free: no final narration LLM call happens here.  The
+    # contract proves that every selected highlight carries selection_reason,
+    # story_role, score_breakdown, and a narration_generation_input payload.
+    highlights = highlight_planning.enrich_selected_highlights_for_planning(highlights, global_context)
+    stage_b_report = highlight_planning.evaluate_stage_b_highlights(highlights)
+    _audit("05b_highlight_planning_contract", highlights, {
+        "source": "stage_b_legacy_highlight_planning_contract",
+        "migration_stage": "stage_b",
+        "overall_passed": stage_b_report.get("overall_passed"),
+        "pass_rate": stage_b_report.get("pass_rate"),
+        "type_count": stage_b_report.get("type_count"),
+        "arc_count": stage_b_report.get("arc_count"),
+        "required_highlight_fields": highlight_planning.STAGE_B_REQUIRED_HIGHLIGHT_FIELDS,
+        "required_narration_input_fields": highlight_planning.STAGE_B_REQUIRED_NARRATION_INPUT_FIELDS,
+    }, export_clips=False)
+
+    # Stage C migrates the old narration_generation prompt input contract.
+    # It intentionally disables the LLM call and writes replayable prompt payloads
+    # so we can validate the writer input without spending tokens.
+    stage_c_items = narration_contract.build_stage_c_replay_items(highlights, global_context)
+    stage_c_report = narration_contract.evaluate_stage_c_replay_items(stage_c_items)
+    _audit(narration_contract.STAGE_C_STAGE_NAME, stage_c_items, {
+        "source": "stage_c_legacy_narration_generation_input_replay",
+        "migration_stage": "stage_c",
+        "overall_passed": stage_c_report.get("overall_passed"),
+        "pass_rate": stage_c_report.get("pass_rate"),
+        "llm_call_enabled": False,
+        "over_budget_count": stage_c_report.get("over_budget_count"),
+        "required_item_fields": narration_contract.STAGE_C_REQUIRED_ITEM_FIELDS,
+        "required_payload_fields": narration_contract.STAGE_C_REQUIRED_PAYLOAD_FIELDS,
+        "required_segment_fields": narration_contract.STAGE_C_REQUIRED_SEGMENT_FIELDS,
+    }, export_clips=False)
+
+    # Stage D prepares bounded/cached legacy understanding LLM samples.
+    # It does not call final narration generation.  Live LLM sampling is opt-in
+    # via env/config and defaults to zero token spend.
+    def _cfg_bool(key, default=False):
+        raw = _cfg_str(key, "true" if default else "false").strip().lower()
+        return raw in {"1", "true", "yes", "on", "启用", "是"}
+
+    stage_d_llm_enabled = _cfg_bool("movie_story_stage_d_llm_enabled", False)
+    try:
+        import os as _stage_d_os
+        stage_d_llm_enabled = stage_d_llm_enabled or str(_stage_d_os.environ.get("MOVIE_STORY_STAGE_D_LLM_ENABLED", "0")).lower() in {"1", "true", "yes", "on"}
+        stage_d_max_samples = int(_stage_d_os.environ.get("MOVIE_STORY_STAGE_D_MAX_LOCAL_SAMPLES") or _cfg_int("movie_story_stage_d_max_local_samples", 8))
+        stage_d_max_live_calls = int(_stage_d_os.environ.get("MOVIE_STORY_STAGE_D_MAX_LIVE_CALLS") or _cfg_int("movie_story_stage_d_max_live_calls", 0))
+        stage_d_max_input_chars = int(_stage_d_os.environ.get("MOVIE_STORY_STAGE_D_MAX_INPUT_CHARS") or _cfg_int("movie_story_stage_d_max_input_chars", 9000))
+    except Exception:
+        stage_d_max_samples = 8
+        stage_d_max_live_calls = 0
+        stage_d_max_input_chars = 9000
+
+    stage_d_items = understanding_quality.build_stage_d_understanding_items(
+        stage_c_items,
+        global_context,
+        max_local_samples=stage_d_max_samples,
+        llm_call_enabled=stage_d_llm_enabled,
+        max_input_chars=stage_d_max_input_chars,
+    )
+    if stage_d_llm_enabled and stage_d_max_live_calls > 0:
+        stage_d_items = understanding_quality.maybe_run_live_understanding_samples(
+            stage_d_items,
+            max_live_calls=stage_d_max_live_calls,
+        )
+    stage_d_report = understanding_quality.evaluate_stage_d_items(
+        stage_d_items,
+        max_input_chars=stage_d_max_input_chars,
+        max_llm_calls=(stage_d_max_live_calls if stage_d_llm_enabled else 0),
+        min_local_samples=min(6, max(0, stage_d_max_samples)),
+    )
+    _audit(understanding_quality.STAGE_D_STAGE_NAME, stage_d_items, {
+        "source": "stage_d_legacy_global_local_understanding_quality_samples",
+        "migration_stage": "stage_d",
+        "overall_passed": stage_d_report.get("overall_passed"),
+        "pass_rate": stage_d_report.get("pass_rate"),
+        "llm_call_enabled": stage_d_llm_enabled,
+        "llm_enabled_count": stage_d_report.get("llm_enabled_count"),
+        "max_live_calls": stage_d_max_live_calls,
+        "global_request_count": stage_d_report.get("global_request_count"),
+        "local_sample_count": stage_d_report.get("local_sample_count"),
+        "cache_ready_count": stage_d_report.get("cache_ready_count"),
+        "over_budget_count": stage_d_report.get("over_budget_count"),
+        "required_item_fields": understanding_quality.STAGE_D_REQUIRED_ITEM_FIELDS,
+        "required_payload_fields": understanding_quality.STAGE_D_REQUIRED_PAYLOAD_FIELDS,
+        "global_target_fields": understanding_quality.STAGE_D_GLOBAL_TARGET_FIELDS,
+        "local_target_fields": understanding_quality.STAGE_D_LOCAL_TARGET_FIELDS,
+    }, export_clips=False)
+
+    # Stage E verifies and applies whitelisted writebacks from Stage-D live/cache
+    # understanding results.  This still does not generate final narration.
+    stage_e_items = understanding_writeback.build_stage_e_writeback_items(stage_d_items)
+    stage_e_report = understanding_writeback.evaluate_stage_e_items(stage_e_items)
+    if stage_e_report.get("passed", 0):
+        global_context, highlights = understanding_writeback.apply_stage_e_writebacks(global_context, highlights, stage_e_items)
+    _audit(understanding_writeback.STAGE_E_STAGE_NAME, stage_e_items, {
+        "source": "stage_e_legacy_understanding_result_writeback",
+        "migration_stage": "stage_e",
+        "overall_passed": stage_e_report.get("overall_passed"),
+        "pass_rate": stage_e_report.get("pass_rate"),
+        "global_success_count": stage_e_report.get("global_success_count"),
+        "local_success_count": stage_e_report.get("local_success_count"),
+        "missing_result_count": stage_e_report.get("missing_result_count"),
+        "disallowed_writeback_count": stage_e_report.get("disallowed_writeback_count"),
+        "required_item_fields": understanding_writeback.STAGE_E_REQUIRED_ITEM_FIELDS,
+        "global_required_min_fields": understanding_writeback.STAGE_E_GLOBAL_REQUIRED_MIN_FIELDS,
+        "local_required_min_fields": understanding_writeback.STAGE_E_LOCAL_REQUIRED_MIN_FIELDS,
+    }, export_clips=False)
+
+    _stage_a_build_narration_evidence(highlights, scenes, global_context)
+    _audit("05_selected_highlights", highlights, {
+        "policy": "typed_highlight_pools_no_duration_density_limit",
+        "strength": st,
+        "selected": len(highlights),
+        "source_story_count": len(stories),
+        "source_scene_count": len(scenes),
+        "typed_candidate_count": len(audited),
+        "selected_type_distribution": highlight_selection.type_distribution(highlights),
+        "duration_cap": None,
+        "min_gap_seconds": None,
+        "output_order": "chronological_movie_time",
+        "narration_next_step": "06_scene_evidence_for_narration -> 07_narration_script",
+    })
+
+    return highlights
+
+
+
+
+
+
+
+def normalize_script_items_without_retiming(items, candidate_type="script_item"):
+    out = normalize_list(items, candidate_type=candidate_type)
+    assert_same_as_plot("script_items", out)
+    for item in out:
+        item["script_item_policy"] = "runtime_pass_through_no_retiming"
+        item["narration"] = item.get("narration") or text_of(item)
+        item["OST"] = item.get("OST", 2)
+    return out

@@ -1,0 +1,111 @@
+[
+  {
+    "_id": 1,
+    "timestamp": "00:00:00,000-00:01:00,000",
+    "source_timestamp": "00:00:00,000-00:01:00,000",
+    "picture": "a",
+    "narration": "",
+    "narration_quality": {
+      "anti_verbatim_checked": true,
+      "analysis_cliche_checked": true,
+      "verbatim_like_after_repair": false,
+      "analysis_cliche_after_repair": false,
+      "source_text_length": 5
+    },
+    "OST": 1,
+    "evidence_refs": [
+      "historical_fast_cut_001"
+    ],
+    "char_budget": 265,
+    "emotion": "平静",
+    "segment_id": "historical_fast_cut_001",
+    "scene_id": "historical_fast_cut_001",
+    "start": 0.0,
+    "end": 60.0,
+    "duration": 60.0,
+    "plot_role": null,
+    "plot_function": "历史剧快速粗切",
+    "attraction_level": null,
+    "importance_level": "medium",
+    "narration_level": null,
+    "confidence": null,
+    "global_arc": null,
+    "risk_note": "direct_cut_first_use_subtitle_time_original_audio",
+    "generation_mode": "direct_cut_first",
+    "narration_missing_use_original_audio": true,
+    "batch_missing_segment_original_audio": true,
+    "composition_audio_mode": "raw",
+    "narration_sentences": [],
+    "prompt_strategy_id": null,
+    "prompt_strategy_label": null,
+    "prompt_strategy_profile": {},
+    "prompt_strategy_score": null,
+    "prompt_strategy_score_report": {},
+    "prompt_strategy_candidate_count": null,
+    "validator_status": null,
+    "surface_dialogue_meaning": null,
+    "real_narrative_state": null,
+    "conflict_summary": null,
+    "character_motivation": null,
+    "story_function": null,
+    "local_understanding": {},
+    "story_validation": {},
+    "legacy_segment_understanding": {},
+    "primary_evidence": null,
+    "shot_role": null,
+    "llm_highlight_selected": true,
+    "llm_raw_voice_keep": true,
+    "before_prologue_end": false,
+    "crosses_prologue_boundary": false,
+    "prologue_trimmed": false,
+    "prologue_original_before_prologue_end": false,
+    "prologue_end": null,
+    "semantic_timestamp": "00:00:00,000-00:01:00,000",
+    "highlight_id": "historical_fast_cut_001",
+    "highlight_rank": 1,
+    "highlight_reasons": [],
+    "frame_paths": [],
+    "visual_summary": [],
+    "representative_frames": [],
+    "source_segment_ids": [
+      "subtitle_0001",
+      "subtitle_0002",
+      "subtitle_0003"
+    ],
+    "source_scene_ids": [
+      "subtitle_0001",
+      "subtitle_0002",
+      "subtitle_0003"
+    ],
+    "source_evidence_ids": [
+      "subtitle_0001",
+      "subtitle_0002",
+      "subtitle_0003"
+    ],
+    "main_text_evidence": "a b c",
+    "clip_match_rule": "current_clip_only",
+    "clip_match_tolerance_seconds": 3.0,
+    "clip_text_evidence": "a b c",
+    "clip_visual_evidence": [],
+    "narration_validation": {
+      "status": "skipped",
+      "issues": [
+        "direct_cut_first_use_original_audio"
+      ]
+    },
+    "fit_check": {
+      "fits": true,
+      "budget": 265,
+      "actual": 0,
+      "overflow": 0,
+      "overflow_seconds": 0.0,
+      "severity": "ok"
+    },
+    "direct_cut_first": true,
+    "direct_cut_source": "subtitle_time_window",
+    "raw_voice_retain": true,
+    "raw_voice_retain_suggestion": true,
+    "highlight_filter_selected": true,
+    "direct_cut_note": "字幕时间直接切原片，解说后补"
+  }
+]

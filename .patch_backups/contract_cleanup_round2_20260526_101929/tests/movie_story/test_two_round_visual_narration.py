@@ -1,0 +1,99 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from app.services.movie_story import two_round_visual_narration as visual
+
+
+SRT_TEXT = """1
+00:00:01,000 --> 00:00:03,000
+你为什么回来？
+
+2
+00:00:08,000 --> 00:00:12,000
+我不是来找你的。
+"""
+
+
+def test_generate_two_round_visual_narration_items_uses_visual_first_round(tmp_path, monkeypatch) -> None:
+    video_path = tmp_path / "video.mp4"
+    video_path.write_bytes(b"fake")
+
+    monkeypatch.setattr(
+        visual,
+        "detect_shot_boundaries",
+        lambda *args, **kwargs: [
+            {"shot_id": "shot_0001", "start": 0.0, "end": 65.0}
+        ],
+    )
+    monkeypatch.setattr(
+        visual,
+        "build_scene_segments",
+        lambda *args, **kwargs: [
+            {
+                "scene_id": "scene_0001",
+                "start": 0.0,
+                "end": 65.0,
+                "duration": 65.0,
+                "shot_ids": ["shot_0001"],
+                "subtitle_count": 1,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        visual,
+        "build_visual_focus_segments",
+        lambda *args, **kwargs: [
+            {
+                "segment_id": "focus_001",
+                "start": 0.0,
+                "end": 65.0,
+                "source": "auto",
+                "reason": "unit test focus segment",
+                "scene_id": "scene_0001",
+            }
+        ],
+    )
+
+    monkeypatch.setattr(
+        visual,
+        "sample_keyframes_for_scene_context",
+        lambda *args, **kwargs: [{"frame_id": "scene_frame", "timestamp": 1.0, "sampling_stage": "scene_context_low_density", "frame_path": str(tmp_path / "scene.jpg")}],
+    )
+    monkeypatch.setattr(
+        visual,
+        "sample_keyframes_for_visual_focus_segments",
+        lambda *args, **kwargs: [{"frame_id": "focus_frame", "timestamp": 2.0, "sampling_stage": "visual_focus_detail", "frame_path": str(tmp_path / "focus.jpg")}],
+    )
+    (tmp_path / "scene.jpg").write_bytes(b"image")
+    (tmp_path / "focus.jpg").write_bytes(b"image")
+
+    def fake_first_round(**kwargs: Any) -> str:
+        assert kwargs["image_paths"]
+        assert "【视觉片段抽帧】" in kwargs["prompt"]
+        assert "【视觉片段详细抽帧】" in kwargs["prompt"]
+        assert "visual_focus_segments 不是 AI 推荐高光" not in kwargs["prompt"]
+        return "故事段一：人物关系已经根据画面校正。\n步骤四：主线候选。\n步骤五：推荐主线。"
+
+    def fake_text(prompt: str, *, api_key: str, base_url: str, model: str, timeout: int) -> str:
+        assert "结构分析" in prompt
+        return "【正式文案】\n**开场**\n[00:01 ~ 01:05]\n这是一段正式解说。"
+
+    monkeypatch.setattr(visual, "call_multimodal_first_round_strict", fake_first_round)
+    monkeypatch.setattr(visual, "_call_chat_completion", fake_text)
+
+    items, metadata = visual.generate_two_round_visual_narration_items(
+        raw_srt_text=SRT_TEXT,
+        request={"video_path": str(video_path), "vision_api_key": "vk", "vision_model": "gemini/gemini-test"},
+        output_dir=tmp_path,
+        text_api_key="tk",
+        text_base_url="",
+        text_model="tm",
+        style="general",
+    )
+
+    assert items
+    assert Path(metadata["visual_context_path"]).exists()
+    assert Path(metadata["analysis_prompt_path"]).exists()

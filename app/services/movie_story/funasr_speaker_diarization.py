@@ -1,0 +1,356 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""
+funasr_speaker_diarization.py
+
+正式 Fun-ASR 说话人识别服务。
+
+本模块只负责把“本地音频路径”交给现有百炼 ASR 服务，
+复用 asr_bailian.py 的 OSS / filetrans / polling / transcription 下载能力，
+并生成前端使用的 SPEAKER 预览与 speaker_context。
+
+禁止事项：
+- 不新建 OSS 上传实现。
+- 不从字幕文本猜角色名。
+- 不调用 LLM 判断说话人。
+"""
+
+__CONTEXT__ = {
+    "layer": "service",
+    "domain": "movie_story.funasr_speaker_diarization",
+    "entry_points": [
+        "build_funasr_speaker_preview_from_audio",
+        "build_funasr_speaker_context_from_audio",
+    ],
+    "called_by": [
+        "app.api.routers.speaker_context",
+        "web/src/components/workspace/SpeakerContextPanel.tsx",
+    ],
+    "decisions": [
+        "2026-05: 复用 asr_bailian.py 的 recognize_filetrans_audio，不另写 OSS。",
+        "2026-05: Fun-ASR diarization 只产出 SPEAKER_ID，角色名由前端绑定。",
+    ],
+    "pending": [
+        "后续保存 speaker_role_map 到项目配置。",
+        "后续接入 two_round_narration.py 第一轮提示词。",
+    ],
+    "ai_constraints": [
+        "禁止前端或服务端从字幕文本推断角色名。",
+        "禁止把 API Key 写进代码。",
+        "禁止绕开 asr_bailian.py 重新实现 OSS。",
+    ],
+}
+
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+from loguru import logger
+
+from app.services.movie_story.aliyun_funasr_speaker_context import build_speaker_context_text_from_aliyun_result
+from app.services.movie_story.aliyun_funasr_speaker_context import normalize_aliyun_transcription_result
+from app.services.movie_story.speaker_role_binding import build_speaker_preview
+from app.services.movie_story.speaker_role_binding import normalize_speaker_role_map
+from pathlib import Path
+
+
+def build_funasr_speaker_preview_from_audio(
+    audio_path: str,
+    *,
+    max_examples_per_speaker: int = 5,
+) -> dict[str, Any]:
+    """用现有百炼 Fun-ASR 录音文件识别链路生成 SPEAKER 预览。"""
+    aliyun_result_json = run_funasr_diarization(audio_path)
+    segments = normalize_aliyun_transcription_result(aliyun_result_json)
+    preview = build_speaker_preview(
+        segments,
+        max_examples_per_speaker=max_examples_per_speaker,
+    )
+    speaker_diagnostics = build_funasr_speaker_diagnostics(aliyun_result_json, segments)
+    return {
+        "provider": "aliyun_funasr",
+        "audio_path": audio_path,
+        "speaker_segments_count": len(segments),
+        "aliyun_result_json": aliyun_result_json,
+        "speaker_preview": preview,
+        "speaker_diagnostics": speaker_diagnostics,
+    }
+
+
+def build_funasr_speaker_context_from_audio(
+    audio_path: str,
+    subtitle_segments: Sequence[Mapping[str, Any]],
+    *,
+    speaker_role_map: Mapping[str, Any] | None = None,
+    speaker_confidence_map: Mapping[str, float] | None = None,
+    max_lines: int = 260,
+) -> dict[str, Any]:
+    """用现有百炼 Fun-ASR 录音文件识别链路生成最终 speaker_context。"""
+    aliyun_result_json = run_funasr_diarization(audio_path)
+    segments = normalize_aliyun_transcription_result(aliyun_result_json)
+    known_speaker_ids = sorted(
+        {
+            str(segment.get("speaker_id"))
+            for segment in segments
+            if str(segment.get("speaker_id") or "").startswith("SPEAKER_")
+        }
+    )
+    cleaned_role_map = normalize_speaker_role_map(
+        speaker_role_map or {},
+        known_speaker_ids=known_speaker_ids,
+    )
+    speaker_context = build_speaker_context_text_from_aliyun_result(
+        subtitle_segments,
+        aliyun_result_json,
+        speaker_role_map=cleaned_role_map,
+        speaker_confidence_map=speaker_confidence_map,
+        max_lines=max_lines,
+    )
+    return {
+        "provider": "aliyun_funasr",
+        "audio_path": audio_path,
+        "speaker_role_map": cleaned_role_map,
+        "speaker_context": speaker_context,
+    }
+
+
+def run_funasr_diarization(audio_path: str) -> dict[str, Any]:
+    """
+    调用现有 asr_bailian.py Fun-ASR filetrans 链路。
+
+    这里要求 asr_bailian.recognize_filetrans_audio 已支持 diarization_enabled 参数。
+    升级脚本会直接修改 asr_bailian.py 的现有函数签名和请求体。
+    """
+    effective_audio_path = prepare_audio_path_for_funasr(audio_path)
+    service = _create_bailian_asr_service()
+    result = service.recognize_filetrans_audio(
+        audio_path=effective_audio_path,
+        model="fun-asr",
+        enable_words=True,
+        diarization_enabled=True,
+    )
+    raw = _extract_raw_aliyun_result(result)
+    raw_result_path = save_funasr_raw_result(audio_path, effective_audio_path, raw)
+    logger.info("Fun-ASR raw result 调试文件: {}", raw_result_path)
+    logger.info(
+        "Fun-ASR speaker diarization 完成: source_audio_path={}, effective_audio_path={}, result_keys={}",
+        audio_path,
+        effective_audio_path,
+        list(raw.keys()),
+    )
+    return raw
+
+AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".webm"}
+VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".flv", ".wmv", ".m4v"}
+
+
+def prepare_audio_path_for_funasr(media_path: str) -> str:
+    """为 Fun-ASR speaker diarization 准备音频文件；OSS 上传仍由 asr_bailian.py 负责。"""
+    source = Path(media_path)
+    if not source.exists():
+        raise FileNotFoundError(f"说话人识别输入文件不存在: {media_path}")
+
+    suffix = source.suffix.lower()
+    if suffix in AUDIO_SUFFIXES:
+        return str(source)
+
+    if suffix not in VIDEO_SUFFIXES:
+        raise ValueError(
+            f"不支持的说话人识别输入文件类型: {suffix or '<no suffix>'}。"
+            "请传入音频文件，或常见视频文件。"
+        )
+
+    return extract_funasr_audio_from_video(source)
+
+
+def extract_funasr_audio_from_video(video_path: Path) -> str:
+    """从视频抽取 Fun-ASR 说话人识别使用的轻量音频。"""
+    audio_dir = video_path.parent / "speaker_context_audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = audio_dir / f"{video_path.stem}.funasr_speaker.wav"
+
+    if audio_path.exists() and audio_path.stat().st_mtime >= video_path.stat().st_mtime:
+        logger.info("复用已抽取说话人识别音频: {}", audio_path)
+        return str(audio_path)
+
+    import subprocess
+
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-acodec",
+        "pcm_s16le",
+        str(audio_path),
+    ]
+    logger.info("从视频抽取说话人识别音频: {} -> {}", video_path, audio_path)
+    result = subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "ffmpeg 抽取说话人识别音频失败: "
+            f"returncode={result.returncode}, stderr={result.stderr[-1200:]}"
+        )
+
+    return str(audio_path)
+
+def build_funasr_speaker_diagnostics(
+    aliyun_result_json: dict[str, Any],
+    normalized_segments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """统计 raw result 和 normalized segments 中的 speaker_id 分布。"""
+    segments = normalized_segments or normalize_aliyun_transcription_result(aliyun_result_json)
+    raw_speaker_ids = sorted(collect_raw_speaker_ids(aliyun_result_json))
+
+    speaker_stats: dict[str, dict[str, Any]] = {}
+    for segment in segments:
+        speaker_id = str(segment.get("speaker_id") or "SPEAKER_UNKNOWN")
+        start = float(segment.get("start") or 0)
+        end = float(segment.get("end") or start)
+        duration = max(0.0, end - start)
+        text = str(segment.get("text") or "").strip()
+
+        stat = speaker_stats.setdefault(
+            speaker_id,
+            {
+                "speaker_id": speaker_id,
+                "segment_count": 0,
+                "total_duration": 0.0,
+                "examples": [],
+            },
+        )
+        stat["segment_count"] += 1
+        stat["total_duration"] += duration
+        if text and len(stat["examples"]) < 3:
+            stat["examples"].append(
+                {
+                    "start": start,
+                    "end": end,
+                    "text": text,
+                }
+            )
+
+    normalized_stats = sorted(
+        speaker_stats.values(),
+        key=lambda item: (-float(item["total_duration"]), str(item["speaker_id"])),
+    )
+
+    return {
+        "raw_speaker_ids_count": len(raw_speaker_ids),
+        "raw_speaker_ids": raw_speaker_ids,
+        "normalized_speaker_ids_count": len(normalized_stats),
+        "normalized_speakers": normalized_stats,
+    }
+
+
+def collect_raw_speaker_ids(value: Any) -> set[str]:
+    """递归收集阿里原始 JSON 中所有 speaker_id 字段。"""
+    speaker_ids: set[str] = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "speaker_id" and item is not None:
+                speaker_ids.add(normalize_debug_speaker_id(item))
+            else:
+                speaker_ids.update(collect_raw_speaker_ids(item))
+    elif isinstance(value, list):
+        for item in value:
+            speaker_ids.update(collect_raw_speaker_ids(item))
+    return speaker_ids
+
+
+def normalize_debug_speaker_id(value: Any) -> str:
+    """把 raw speaker_id 归一成便于阅读的字符串。"""
+    if isinstance(value, int):
+        return f"SPEAKER_{value:02d}"
+    raw = str(value).strip()
+    if raw.isdigit():
+        return f"SPEAKER_{int(raw):02d}"
+    return raw or "SPEAKER_UNKNOWN"
+
+
+def save_funasr_raw_result(
+    source_media_path: str,
+    effective_audio_path: str,
+    aliyun_result_json: dict[str, Any],
+) -> str:
+    """保存 Fun-ASR raw result，便于排查 speaker_id 分布。"""
+    import json
+
+    audio_path = Path(effective_audio_path)
+    debug_dir = audio_path.parent / "speaker_context_raw"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+
+    output_path = debug_dir / f"{audio_path.stem}.raw.json"
+    diagnostics = build_funasr_speaker_diagnostics(aliyun_result_json)
+
+    payload = {
+        "source_media_path": source_media_path,
+        "effective_audio_path": effective_audio_path,
+        "speaker_diagnostics": diagnostics,
+        "raw_result": aliyun_result_json,
+    }
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+        newline="\n",
+    )
+    logger.info("已保存 Fun-ASR speaker raw result: {}", output_path)
+    return str(output_path)
+
+
+def _create_bailian_asr_service() -> Any:
+    """实例化现有 asr_bailian 服务，不引入第二套 OSS。"""
+    from app.services import asr_bailian
+
+    candidates = [
+        "BailianASRService",
+        "BailianAsrService",
+        "BailianSpeechService",
+        "BailianASR",
+    ]
+    for name in candidates:
+        service_cls = getattr(asr_bailian, name, None)
+        if service_cls is not None and hasattr(service_cls, "recognize_filetrans_audio"):
+            return service_cls()
+
+    for value in asr_bailian.__dict__.values():
+        if isinstance(value, type) and hasattr(value, "recognize_filetrans_audio"):
+            return value()
+
+    raise RuntimeError("未找到包含 recognize_filetrans_audio 的百炼 ASR 服务类，请检查 app/services/asr_bailian.py")
+
+
+def _extract_raw_aliyun_result(result: Any) -> dict[str, Any]:
+    """从 asr_bailian 返回结果里提取原始阿里 JSON。"""
+    if isinstance(result, dict):
+        for key in (
+            "raw_result",
+            "aliyun_result_json",
+            "downloaded",
+            "transcription",
+            "task_result",
+        ):
+            value = result.get(key)
+            if isinstance(value, dict) and _looks_like_aliyun_transcription(value):
+                return value
+        if _looks_like_aliyun_transcription(result):
+            return result
+    raise RuntimeError(
+        "Fun-ASR 返回结果中未找到可解析的原始 transcription JSON。"
+        "请确认 asr_bailian.py recognize_filetrans_audio 保留 downloaded/raw_result。"
+    )
+
+
+def _looks_like_aliyun_transcription(value: Mapping[str, Any]) -> bool:
+    """判断是否像阿里 transcription_url 下载后的 JSON。"""
+    return isinstance(value.get("transcripts"), list) or isinstance(value.get("task_result"), dict)

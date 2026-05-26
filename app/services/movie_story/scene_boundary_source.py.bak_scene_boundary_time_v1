@@ -1,0 +1,203 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""
+scene_boundary_source.py
+
+严格复用旧 PySceneDetect 镜头检测能力，并统一成 scene_boundary_context_workflow 需要的 shot_boundaries。
+
+本模块是 adapter，不重新实现镜头检测：
+- 只调用 timeline_runtime.detect_pyscenedetect_scene_boundaries
+- 不调用 detect_ffmpeg_scene_boundaries dispatcher
+- 不新增 fallback / hybrid / 静默降级
+- 旧函数如果返回空，本模块直接报错
+"""
+
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
+
+from loguru import logger
+
+from app.services.movie_story.scene_boundary_context_workflow import build_scene_boundary_payload
+
+
+def detect_shot_boundaries_from_video(
+    *,
+    video_path: str,
+    story_start: float,
+    story_end: float,
+) -> dict[str, Any]:
+    """从视频检测物理镜头边界，并统一成 shot_boundaries 区间。"""
+    source_path = Path(video_path)
+    if not source_path.exists():
+        raise FileNotFoundError(f"视频文件不存在，无法检测镜头边界: {video_path}")
+
+    start = float(story_start)
+    end = float(story_end)
+    if end <= start:
+        raise ValueError(f"story_end 必须大于 story_start: start={start}, end={end}")
+
+    boundary_points = _call_timeline_pyscenedetect_detector(
+        video_path=str(source_path),
+        story_start=start,
+        story_end=end,
+    )
+    if not boundary_points:
+        raise RuntimeError(
+            "PySceneDetect 未返回任何镜头边界。"
+            "新 scene_boundary_source 不做 ffmpeg/subtitle fallback；请检查视频、依赖或检测阈值。"
+        )
+
+    shot_boundaries = convert_boundary_points_to_shot_boundaries(
+        boundary_points=boundary_points,
+        story_start=start,
+        story_end=end,
+    )
+    if not shot_boundaries:
+        raise RuntimeError(
+            "PySceneDetect 返回了边界点，但无法转换成有效 shot_boundaries。"
+            "请检查边界时间是否落在 story_start/story_end 范围内。"
+        )
+
+    logger.info(
+        "shot_boundaries 生成完成: video={}, shots={}, story_start={}, story_end={}",
+        source_path.name,
+        len(shot_boundaries),
+        round(start, 3),
+        round(end, 3),
+    )
+    return {
+        "shot_count": len(shot_boundaries),
+        "shot_boundaries": shot_boundaries,
+        "source": "pyscenedetect",
+        "story_start": round(start, 3),
+        "story_end": round(end, 3),
+    }
+
+
+def build_scene_boundary_context_from_video(
+    *,
+    video_path: str,
+    subtitle_segments: Sequence[Mapping[str, Any]],
+    visual_anchors: Sequence[Mapping[str, Any]] | None = None,
+    target_scene_count: int = 30,
+    min_scene_duration: float = 45.0,
+    max_scene_duration: float = 180.0,
+) -> dict[str, Any]:
+    """总入口：video + subtitles -> shot_boundaries -> scene_boundary_context。"""
+    story_start, story_end = infer_story_range_from_subtitles(subtitle_segments)
+    detection_payload = detect_shot_boundaries_from_video(
+        video_path=video_path,
+        story_start=story_start,
+        story_end=story_end,
+    )
+    scene_payload = build_scene_boundary_payload(
+        subtitle_segments=subtitle_segments,
+        shot_boundaries=detection_payload["shot_boundaries"],
+        visual_anchors=visual_anchors or [],
+        target_scene_count=target_scene_count,
+        min_scene_duration=min_scene_duration,
+        max_scene_duration=max_scene_duration,
+    )
+    return {
+        "shot_detection": detection_payload,
+        **scene_payload,
+    }
+
+
+def convert_boundary_points_to_shot_boundaries(
+    *,
+    boundary_points: Sequence[Mapping[str, Any]],
+    story_start: float,
+    story_end: float,
+) -> list[dict[str, Any]]:
+    """把旧函数返回的 boundary time 点转成 shot range。"""
+    start = float(story_start)
+    end = float(story_end)
+
+    indexed_points = []
+    for item in boundary_points:
+        try:
+            time_value = float(item["time"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"非法镜头边界点，缺少有效 time 字段: {item!r}") from None
+
+        if start < time_value < end:
+            indexed_points.append(
+                {
+                    "time": round(time_value, 3),
+                    "reason": list(item.get("reason") or ["pyscenedetect"]),
+                }
+            )
+
+    indexed_points.sort(key=lambda item: item["time"])
+
+    unique_points: list[dict[str, Any]] = []
+    for item in indexed_points:
+        if unique_points and abs(float(item["time"]) - float(unique_points[-1]["time"])) < 0.001:
+            continue
+        unique_points.append(item)
+
+    if not unique_points:
+        return []
+
+    points = [start] + [float(item["time"]) for item in unique_points] + [end]
+    reasons = [["story_start"]] + [list(item["reason"]) for item in unique_points]
+
+    shots: list[dict[str, Any]] = []
+    for index in range(len(points) - 1):
+        shot_start = float(points[index])
+        shot_end = float(points[index + 1])
+        if shot_end <= shot_start:
+            continue
+        reason = reasons[index] if index < len(reasons) else ["pyscenedetect"]
+        shots.append(
+            {
+                "start": round(shot_start, 3),
+                "end": round(shot_end, 3),
+                "duration": round(shot_end - shot_start, 3),
+                "source": "pyscenedetect",
+                "reason": reason,
+            }
+        )
+    return shots
+
+
+def infer_story_range_from_subtitles(subtitle_segments: Sequence[Mapping[str, Any]]) -> tuple[float, float]:
+    """从字幕片段推断 story_start/story_end；无字幕直接报错。"""
+    if not subtitle_segments:
+        raise ValueError("subtitle_segments 为空，无法推断 story_start/story_end")
+
+    starts: list[float] = []
+    ends: list[float] = []
+    for item in subtitle_segments:
+        try:
+            starts.append(float(item["start"]))
+            ends.append(float(item["end"]))
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"字幕片段缺少有效 start/end: {item!r}") from None
+
+    story_start = min(starts)
+    story_end = max(ends)
+    if story_end <= story_start:
+        raise ValueError(f"字幕时间范围非法: start={story_start}, end={story_end}")
+    return story_start, story_end
+
+
+def _call_timeline_pyscenedetect_detector(
+    *,
+    video_path: str,
+    story_start: float,
+    story_end: float,
+) -> list[dict[str, Any]]:
+    """调用旧 timeline_runtime 的 PySceneDetect 函数。"""
+    try:
+        from app.services.movie_story.timeline_runtime import detect_pyscenedetect_scene_boundaries
+    except Exception as exc:
+        raise RuntimeError(f"无法导入旧 PySceneDetect 检测函数: {exc}") from exc
+
+    result = detect_pyscenedetect_scene_boundaries(video_path, story_start, story_end)
+    if result is None:
+        raise RuntimeError("旧 PySceneDetect 检测函数返回 None")
+    return list(result)

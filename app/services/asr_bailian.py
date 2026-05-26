@@ -1,0 +1,1102 @@
+"""
+阿里云百炼平台 ASR 服务
+支持 Qwen3-ASR-Flash 和 Fun-ASR
+"""
+
+import os
+import ssl
+import time
+import base64
+import shutil
+import mimetypes
+from uuid import uuid4
+from urllib.parse import urljoin
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from typing import Optional, Dict, Any, List
+from pathlib import Path
+from loguru import logger
+
+from app.config import config
+from app.services.process_control import run_cancellable
+
+
+def _build_session(*, verify_ssl: bool = True) -> requests.Session:
+    """Build a requests session with retries and a TLS 1.2-biased SSL context."""
+    from urllib3.util.ssl_ import create_urllib3_context
+
+    class TLS12Adapter(HTTPAdapter):
+        def init_poolmanager(self, *args, **kwargs):
+            context = create_urllib3_context(ssl_version=ssl.PROTOCOL_TLSv1_2)
+            if not verify_ssl:
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+            kwargs["ssl_context"] = context
+            return super().init_poolmanager(*args, **kwargs)
+
+    session = requests.Session()
+    retry = Retry(
+        total=3,
+        connect=3,
+        read=2,
+        backoff_factor=1.0,
+        status_forcelist=(500, 502, 503, 504),
+        allowed_methods=frozenset(["GET", "POST"]),
+        raise_on_status=False,
+    )
+    adapter = TLS12Adapter(max_retries=retry, pool_connections=4, pool_maxsize=4)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+class BailianASRService:
+    """阿里云百炼 ASR 服务"""
+    
+    # API 端点
+    BASE_URL_CN = "https://dashscope.aliyuncs.com/api/v1"
+    BASE_URL_INTL = "https://dashscope-intl.aliyuncs.com/api/v1"
+    
+    # 模型名称
+    MODEL_QWEN3_ASR_FLASH = "qwen3-asr-flash"
+    MODEL_QWEN3_ASR_FLASH_FILETRANS = "qwen3-asr-flash-filetrans"
+    MODEL_FUN_ASR = "fun-asr"
+    
+    def __init__(self, api_key: Optional[str] = None, region: str = "cn"):
+        """
+        初始化百炼 ASR 服务
+        
+        Args:
+            api_key: 阿里云百炼 API Key，如果不提供则从配置读取
+            region: 区域，cn=中国内地，intl=国际
+        """
+        # 优先级：显式入参 > config.whisper.bailian_api_key > 环境变量 DASHSCOPE_API_KEY
+        self.api_key = (
+            api_key
+            or config.whisper.get("bailian_api_key", "")
+            or os.getenv("DASHSCOPE_API_KEY", "")
+        )
+        whisper_cfg = getattr(config, "whisper", {}) or {}
+        configured_region = str(whisper_cfg.get("bailian_region", region) or region).strip().lower()
+        self.region = configured_region if configured_region in {"cn", "intl"} else "cn"
+        self.base_url = self.BASE_URL_CN if self.region == "cn" else self.BASE_URL_INTL
+        self.verify_ssl = bool(whisper_cfg.get("bailian_verify_ssl", True))
+        self.secure_session = _build_session(verify_ssl=True)
+        self.insecure_session = _build_session(verify_ssl=False)
+        self.transport_mode = str(whisper_cfg.get("bailian_transport_mode", "dashscope") or "dashscope").strip().lower()
+        self.request_timeout = int(whisper_cfg.get("bailian_timeout", 300) or 300)
+        cfg_root = getattr(config, "_cfg", {}) or {}
+        self.oss_cfg = getattr(config, "oss", None) or cfg_root.get("oss", {}) or {}
+        default_audio_source = "oss" if self.oss_cfg else "public_url"
+        self.filetrans_audio_source = str(
+            whisper_cfg.get("bailian_filetrans_audio_source", default_audio_source) or default_audio_source
+        ).strip().lower()
+        self.filetrans_public_base_url = str(whisper_cfg.get("bailian_filetrans_public_base_url", "") or "").strip()
+        self.filetrans_audio_url = str(whisper_cfg.get("bailian_filetrans_audio_url", "") or "").strip()
+        self.filetrans_timeout = int(whisper_cfg.get("bailian_filetrans_timeout", 3600) or 3600)
+        self.filetrans_poll_interval = int(whisper_cfg.get("bailian_filetrans_poll_interval", 2) or 2)
+        self.filetrans_enable_words = bool(whisper_cfg.get("bailian_filetrans_enable_words", True))
+        self.filetrans_oss_delete_after_submit = bool(
+            whisper_cfg.get("bailian_filetrans_oss_delete_after_submit", False)
+        )
+
+        if not self.api_key:
+            raise ValueError(
+                "百炼 API Key 未配置：请在 config.toml 的 [whisper] 部分设置 bailian_api_key，"
+                "或设置环境变量 DASHSCOPE_API_KEY"
+            )
+    
+    def _get_headers(self, async_mode: bool = False) -> Dict[str, str]:
+        """获取请求头"""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        if async_mode:
+            headers["X-DashScope-Async"] = "enable"
+        return headers
+
+    def _select_session(self, verify_ssl: bool) -> requests.Session:
+        return self.secure_session if verify_ssl else self.insecure_session
+
+    def _post_with_ssl_retry(self, url: str, *, max_attempts: int = 4, **kwargs):
+        """
+        POST 请求，对 SSL/连接层错误做显式指数退避重试。
+        urllib3 的 Retry 不捕获 SSLError/SSLEOFError，所以我们在这里兜底。
+        """
+        verify_ssl = bool(kwargs.pop("verify", self.verify_ssl))
+        session = self._select_session(verify_ssl)
+        last_err: Optional[Exception] = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return session.post(url, **kwargs)
+            except (
+                requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.ChunkedEncodingError,
+            ) as err:
+                last_err = err
+                if attempt >= max_attempts:
+                    break
+                wait = min(2 ** (attempt - 1), 8)
+                logger.warning(
+                    f"百炼 ASR 请求失败 (attempt {attempt}/{max_attempts}): {type(err).__name__}: {err}"
+                    f"，{wait}s 后重试"
+                )
+                time.sleep(wait)
+        assert last_err is not None
+        raise last_err
+    
+    def _raise_for_status_with_context(self, response: requests.Response, *, transport_mode: str):
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            status_code = response.status_code
+            detail = response.text[:500]
+            if status_code == 401:
+                raise requests.HTTPError(
+                    f"百炼 {transport_mode} 接口返回 401 Unauthorized。请检查 workspace/state/config.toml 中的 bailian_api_key、bailian_region，以及 key 是否对应该地域。响应片段: {detail}",
+                    response=response,
+                    request=response.request,
+                ) from exc
+            raise requests.HTTPError(
+                f"百炼 {transport_mode} 接口请求失败: HTTP {status_code}, 响应片段: {detail}",
+                response=response,
+                request=response.request,
+            ) from exc
+
+    def _file_to_base64(self, file_path: str) -> str:
+        """将文件转换为 base64"""
+        with open(file_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    
+    def _get_audio_mime_type(self, file_path: str) -> str:
+        """获取音频文件的 MIME 类型"""
+        ext = Path(file_path).suffix.lower()
+        mime_types = {
+            ".mp3": "audio/mpeg",
+            ".wav": "audio/wav",
+            ".m4a": "audio/mp4",
+            ".ogg": "audio/ogg",
+            ".flac": "audio/flac",
+            ".aac": "audio/aac",
+        }
+        return mime_types.get(ext, "audio/mpeg")
+
+    def _recognize_short_audio_with_fallbacks(
+        self,
+        audio_path: str,
+        model: str,
+        language: Optional[str] = "zh",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        if self._is_filetrans_model(model) or self._is_recorded_file_model(model):
+            raise ValueError(
+                f"{model} 必须走异步录音文件识别接口，不能走短音频/compatible 同步接口"
+            )
+
+        original_transport = self.transport_mode
+        original_verify = self.verify_ssl
+
+        transport_candidates = [original_transport]
+        if original_transport != "compatible":
+            transport_candidates.append("compatible")
+        if "dashscope" not in transport_candidates:
+            transport_candidates.append("dashscope")
+
+        verify_candidates = [original_verify]
+        if original_verify:
+            verify_candidates.append(False)
+
+        last_err: Optional[Exception] = None
+        for transport in transport_candidates:
+            for verify_ssl in verify_candidates:
+                self.transport_mode = transport
+                self.verify_ssl = verify_ssl
+                try:
+                    logger.info(
+                        f"百炼短音频识别尝试: transport_mode={transport}, verify_ssl={verify_ssl}, 文件={audio_path}"
+                    )
+                    if transport == "compatible":
+                        return self.recognize_short_audio_compatible(audio_path, model=model, language=language)
+                    return self.recognize_short_audio(audio_path, model=model, language=language, **kwargs)
+                except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as err:
+                    last_err = err
+                    logger.warning(
+                        f"百炼短音频识别失败，准备切换模式重试: transport_mode={transport}, verify_ssl={verify_ssl}, error={err}"
+                    )
+                    continue
+                except Exception as err:
+                    last_err = err
+                    if transport == transport_candidates[-1] and verify_ssl == verify_candidates[-1]:
+                        raise
+                    logger.warning(
+                        f"百炼短音频识别异常，尝试其他模式: transport_mode={transport}, verify_ssl={verify_ssl}, error={err}"
+                    )
+                    continue
+                finally:
+                    self.transport_mode = original_transport
+                    self.verify_ssl = original_verify
+
+        if last_err is not None:
+            raise last_err
+        raise RuntimeError("百炼短音频识别失败")
+    
+    @staticmethod
+    def _is_filetrans_model(model: Optional[str]) -> bool:
+        return str(model or "").strip().lower().startswith("qwen3-asr-flash-filetrans")
+
+    @staticmethod
+    def _is_recorded_file_model(model: Optional[str]) -> bool:
+        name = str(model or "").strip().lower()
+        return (
+            name.startswith("fun-asr")
+            or name.startswith("paraformer")
+            or name.startswith("sensevoice")
+        )
+
+    @staticmethod
+    def _is_private_or_local_url(url: str) -> bool:
+        lowered = (url or "").strip().lower()
+        return (
+            "localhost" in lowered
+            or "127.0.0.1" in lowered
+            or "0.0.0.0" in lowered
+            or lowered.startswith("http://192.168.")
+            or lowered.startswith("http://10.")
+            or any(lowered.startswith(f"http://172.{i}.") for i in range(16, 32))
+        )
+
+    @staticmethod
+    def _normalize_oss_endpoint(endpoint: str) -> str:
+        endpoint = str(endpoint or "").strip()
+        if endpoint and not endpoint.startswith(("http://", "https://")):
+            endpoint = "https://" + endpoint
+        return endpoint.rstrip("/")
+
+    @staticmethod
+    def _safe_object_name(name: str) -> str:
+        cleaned = "".join(ch if ch.isalnum() or ch in ".-_" else "_" for ch in (name or "audio.mp3"))
+        return cleaned or "audio.mp3"
+
+    def _upload_file_to_oss_for_filetrans(self, audio_path: str) -> str:
+        """Upload local audio to OSS and return a temporary signed URL for DashScope filetrans."""
+        try:
+            import oss2  # type: ignore
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "当前配置使用 OSS 作为百炼 filetrans 音频来源，但未安装 oss2。"
+                "请先执行: pip install oss2，或 pip install -r requirements.txt。"
+            ) from exc
+
+        src = Path(audio_path)
+        if not src.exists() or not src.is_file():
+            raise FileNotFoundError(f"filetrans 音频文件不存在: {audio_path}")
+
+        cfg = self.oss_cfg
+        endpoint = self._normalize_oss_endpoint(cfg.get("endpoint", ""))
+        bucket_name = str(cfg.get("bucket", "") or "").strip()
+        access_key_id = str(cfg.get("access_key_id", "") or cfg.get("ak", "") or "").strip()
+        access_key_secret = str(cfg.get("access_key_secret", "") or cfg.get("sk", "") or "").strip()
+        security_token = str(cfg.get("security_token", "") or cfg.get("token", "") or "").strip()
+        prefix = str(cfg.get("prefix", "aivideo/asr-filetrans") or "aivideo/asr-filetrans").strip().strip("/")
+        expires = int(cfg.get("url_expires", 7200) or 7200)
+
+        missing = []
+        if not endpoint:
+            missing.append("endpoint")
+        if not bucket_name:
+            missing.append("bucket")
+        if not access_key_id:
+            missing.append("access_key_id")
+        if not access_key_secret:
+            missing.append("access_key_secret")
+        if missing:
+            raise RuntimeError(
+                "OSS 配置不完整，无法为 qwen3-asr-flash-filetrans 准备公网音频 URL。"
+                f"缺少字段: {', '.join(missing)}。请检查 workspace/state/config.toml 的 [oss] 配置。"
+            )
+
+        if security_token:
+            auth = oss2.StsAuth(access_key_id, access_key_secret, security_token)
+        else:
+            auth = oss2.Auth(access_key_id, access_key_secret)
+        bucket = oss2.Bucket(auth, endpoint, bucket_name)
+
+        safe_name = self._safe_object_name(src.name)
+        object_key = f"{prefix}/{uuid4().hex}_{safe_name}" if prefix else f"{uuid4().hex}_{safe_name}"
+        headers = {}
+        content_type = mimetypes.guess_type(str(src))[0]
+        if content_type:
+            headers["Content-Type"] = content_type
+
+        logger.info(f"上传百炼 filetrans 音频到 OSS: bucket={bucket_name}, object={object_key}")
+        bucket.put_object_from_file(object_key, str(src), headers=headers or None)
+        signed_url = bucket.sign_url("GET", object_key, expires, slash_safe=True)
+        logger.info(f"OSS 临时签名 URL 已生成: {signed_url.split('?')[0]}，expires={expires}s")
+        return signed_url
+
+    def _stage_file_for_filetrans(self, audio_path: str) -> str:
+        """Prepare a public file_url for qwen3-asr-flash-filetrans."""
+        if self.filetrans_audio_url:
+            return self.filetrans_audio_url
+
+        source = (self.filetrans_audio_source or "public_url").strip().lower()
+        if source == "oss":
+            return self._upload_file_to_oss_for_filetrans(audio_path)
+
+        if not self.filetrans_public_base_url:
+            raise RuntimeError(
+                "qwen3-asr-flash-filetrans 只接受百炼服务器可访问的 file_url。"
+                "当前未配置 OSS，也未配置 bailian_filetrans_public_base_url。"
+                "生产推荐配置 [oss] 并设置 [whisper].bailian_filetrans_audio_source='oss'。"
+            )
+
+        if self._is_private_or_local_url(self.filetrans_public_base_url):
+            logger.warning(
+                f"当前 bailian_filetrans_public_base_url 看起来不是公网地址: {self.filetrans_public_base_url}。"
+                "阿里云服务器无法访问 localhost/内网地址，若提交失败请改成公网 HTTPS 地址。"
+            )
+
+        from app.utils import utils
+
+        src = Path(audio_path)
+        if not src.exists() or not src.is_file():
+            raise FileNotFoundError(f"filetrans 音频文件不存在: {audio_path}")
+
+        upload_dir = Path(utils.workspace_dir()) / "frontend_uploads" / "asr_filetrans"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = self._safe_object_name(src.name)
+        staged_name = f"{uuid4().hex}_{safe_name}"
+        staged_path = upload_dir / staged_name
+        shutil.copy2(src, staged_path)
+
+        base = self.filetrans_public_base_url.rstrip("/") + "/"
+        file_url = urljoin(base, f"uploads/asr_filetrans/{staged_name}")
+        logger.info(f"filetrans 音频已准备: {staged_path} -> {file_url}")
+        return file_url
+
+    def recognize_short_audio(
+        self,
+        audio_path: str,
+        model: str = "qwen3-asr-flash",
+        language: Optional[str] = "zh",
+        enable_itn: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        短音频同步识别（最长 5 分钟）
+        
+        Args:
+            audio_path: 音频文件路径
+            model: 模型名称，默认 qwen3-asr-flash
+            language: 语言代码，默认 zh
+            enable_itn: 是否开启逆文本正则化
+            
+        Returns:
+            识别结果字典
+        """
+        # 检查文件大小（最大 10MB）
+        file_size = os.path.getsize(audio_path)
+        if file_size > 10 * 1024 * 1024:
+            raise ValueError(f"文件大小 {file_size / 1024 / 1024:.2f}MB 超过 10MB 限制，请使用长音频接口")
+        
+        # 转换为 base64
+        audio_base64 = self._file_to_base64(audio_path)
+        mime_type = self._get_audio_mime_type(audio_path)
+        
+        url = f"{self.base_url}/services/aigc/multimodal-generation/generation"
+        
+        payload = {
+            "model": model,
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"audio": f"data:{mime_type};base64,{audio_base64}"}
+                        ]
+                    }
+                ]
+            },
+            "parameters": {
+                "asr_options": {
+                    "enable_itn": enable_itn,
+                }
+            }
+        }
+        
+        if language:
+            payload["parameters"]["asr_options"]["language"] = language
+        
+        logger.info(f"调用百炼短音频识别: {model}, 文件: {audio_path}")
+        t0 = time.time()
+        response = self._post_with_ssl_retry(
+            url,
+            headers=self._get_headers(),
+            json=payload,
+            timeout=self.request_timeout,
+            verify=self.verify_ssl,
+        )
+        self._raise_for_status_with_context(response, transport_mode="dashscope")
+
+        result = response.json()
+        logger.info(f"百炼 DashScope ASR 识别完成, elapsed={time.time() - t0:.2f}s")
+
+        return result
+    
+    def recognize_short_audio_compatible(
+        self,
+        audio_path: str,
+        model: str = "qwen3-asr-flash",
+        language: Optional[str] = "zh",
+    ) -> Dict[str, Any]:
+        """OpenAI 兼容接口调用 qwen3-asr-flash。"""
+        file_size = os.path.getsize(audio_path)
+        if file_size > 10 * 1024 * 1024:
+            raise ValueError(f"文件大小 {file_size / 1024 / 1024:.2f}MB 超过 10MB 限制，请使用长音频接口")
+
+        audio_base64 = self._file_to_base64(audio_path)
+        mime_type = self._get_audio_mime_type(audio_path)
+        host = "https://dashscope.aliyuncs.com" if self.region == "cn" else "https://dashscope-intl.aliyuncs.com"
+        url = f"{host}/compatible-mode/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": f"data:{mime_type};base64,{audio_base64}"
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+        if language:
+            payload["language"] = language
+
+        logger.info(f"调用百炼兼容接口短音频识别: {model}, 文件: {audio_path}")
+        t0 = time.time()
+        response = self._post_with_ssl_retry(
+            url,
+            headers=self._get_headers(),
+            json=payload,
+            timeout=self.request_timeout,
+            verify=self.verify_ssl,
+        )
+        self._raise_for_status_with_context(response, transport_mode="compatible")
+        result = response.json()
+        logger.info(f"百炼兼容接口 ASR 完成, elapsed={time.time() - t0:.2f}s")
+        return result
+
+    def submit_long_audio_task(
+        self,
+        audio_url: str,
+        model: str = "qwen3-asr-flash-filetrans",
+        language: Optional[str] = "zh",
+        enable_itn: bool = True,
+        enable_words: bool = False,
+        channel_id: Optional[List[int]] = None,
+        diarization_enabled: bool = False,
+    ) -> str:
+        """
+        提交长音频异步识别任务（最长 12 小时）
+        
+        Args:
+            audio_url: 音频文件 URL（必须是公网可访问）
+            model: 模型名称，默认 qwen3-asr-flash-filetrans
+            language: 语言代码
+            enable_itn: 是否开启逆文本正则化
+            enable_words: 是否开启字级别时间戳
+            channel_id: 指定音轨索引
+            
+        Returns:
+            任务 ID
+        """
+        url = f"{self.base_url}/services/audio/asr/transcription"
+        
+        if self._is_recorded_file_model(model):
+            # Fun-ASR / Paraformer / SenseVoice 录音文件识别 API 要求 input.file_urls 数组。
+            payload = {
+                "model": model,
+                "input": {
+                    "file_urls": [audio_url]
+                },
+                "parameters": {
+                    "diarization_enabled": diarization_enabled,
+                    "channel_id": channel_id or [0],
+                }
+            }
+            if language:
+                payload["parameters"]["language_hints"] = [language]
+        else:
+            # Qwen3-ASR-Flash-Filetrans 使用 input.file_url 单字段。
+            payload = {
+                "model": model,
+                "input": {
+                    "file_url": audio_url
+                },
+                "parameters": {
+                    "enable_itn": enable_itn,
+                    "enable_words": enable_words,
+                }
+            }
+            if language:
+                payload["parameters"]["language"] = language
+            if channel_id:
+                payload["parameters"]["channel_id"] = channel_id
+        
+        logger.info(f"提交百炼长音频任务: {model}, URL: {audio_url}")
+        
+        response = self._post_with_ssl_retry(
+            url,
+            headers=self._get_headers(async_mode=True),
+            json=payload,
+            timeout=60,
+            verify=self.verify_ssl,
+        )
+        self._raise_for_status_with_context(response, transport_mode="filetrans_submit")
+        
+        result = response.json()
+        task_id = result.get("output", {}).get("task_id")
+        
+        if not task_id:
+            raise RuntimeError(f"未能获取任务 ID: {result}")
+        
+        logger.info(f"百炼长音频任务提交成功: {task_id}")
+        return task_id
+    
+    def query_task_result(self, task_id: str) -> Dict[str, Any]:
+        """
+        查询异步任务结果
+        
+        Args:
+            task_id: 任务 ID
+            
+        Returns:
+            任务状态和结果
+        """
+        url = f"{self.base_url}/tasks/{task_id}"
+        
+        session = self._select_session(self.verify_ssl)
+        response = session.get(url, headers=self._get_headers(), timeout=60)
+        if response.status_code >= 400:
+            logger.warning(
+                "百炼任务 GET 查询失败，尝试 POST 查询: status={}, body={}",
+                response.status_code,
+                response.text[:300],
+            )
+            response = session.post(url, headers=self._get_headers(async_mode=True), timeout=60)
+        self._raise_for_status_with_context(response, transport_mode="task_query")
+        
+        return response.json()
+    
+    def wait_for_task_complete(
+        self,
+        task_id: str,
+        timeout: int = 3600,
+        poll_interval: int = 5
+    ) -> Dict[str, Any]:
+        """
+        等待异步任务完成
+        
+        Args:
+            task_id: 任务 ID
+            timeout: 最大等待时间（秒）
+            poll_interval: 轮询间隔（秒）
+            
+        Returns:
+            任务结果
+        """
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            result = self.query_task_result(task_id)
+            status = result.get("output", {}).get("task_status", "UNKNOWN")
+            
+            logger.debug(f"任务 {task_id} 状态: {status}")
+            
+            if status == "SUCCEEDED":
+                logger.info(f"任务 {task_id} 完成")
+                return result
+            elif status in ("FAILED", "CANCELLED"):
+                raise RuntimeError(f"任务 {task_id} 失败: {result}")
+            
+            time.sleep(poll_interval)
+        
+        raise TimeoutError(f"等待任务 {task_id} 超时")
+    
+    def _download_filetrans_result(self, task_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Download transcription JSON from task output when DashScope returns transcription_url."""
+        output = task_result.get("output") or {}
+        candidates: List[str] = []
+
+        def collect(obj):
+            if isinstance(obj, dict):
+                for key in ("transcription_url", "transcriptionUrl", "url", "result_url", "resultUrl"):
+                    value = obj.get(key)
+                    if isinstance(value, str) and value.startswith(("http://", "https://")):
+                        candidates.append(value)
+                for value in obj.values():
+                    collect(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    collect(item)
+
+        collect(output)
+        if not candidates:
+            return None
+
+        transcription_url = candidates[0]
+        logger.info(f"下载百炼 filetrans 转写结果: {transcription_url}")
+        session = self._select_session(self.verify_ssl)
+        response = session.get(transcription_url, timeout=self.request_timeout)
+        response.raise_for_status()
+        return response.json()
+
+    # [2026-05 speaker diarization] Fun-ASR recorded-file requests can enable speaker_id output.
+    def recognize_filetrans_audio(
+        self,
+        audio_path: str,
+        model: str = "qwen3-asr-flash-filetrans",
+        language: Optional[str] = "zh",
+        enable_itn: bool = True,
+        enable_words: Optional[bool] = None,
+        diarization_enabled: bool = False,
+    ) -> Dict[str, Any]:
+        """Run async recording-file ASR. Supports qwen3-asr-flash-filetrans and Fun-ASR/Paraformer."""
+        audio_url = self._stage_file_for_filetrans(audio_path)
+        effective_enable_words = self.filetrans_enable_words if enable_words is None else enable_words
+
+        logger.info(f"使用百炼 filetrans 异步识别: model={model}, url={audio_url}")
+        t0 = time.time()
+        task_id = self.submit_long_audio_task(
+            audio_url=audio_url,
+            model=model,
+            language=language,
+            enable_itn=enable_itn,
+            enable_words=effective_enable_words,
+            diarization_enabled=diarization_enabled,
+        )
+        task_result = self.wait_for_task_complete(
+            task_id,
+            timeout=self.filetrans_timeout,
+            poll_interval=self.filetrans_poll_interval,
+        )
+        downloaded = self._download_filetrans_result(task_result)
+        elapsed = time.time() - t0
+        logger.info(f"百炼 filetrans ASR 完成, task_id={task_id}, elapsed={elapsed:.2f}s")
+        if downloaded:
+            return {"task_result": task_result, "transcription": downloaded}
+        return task_result
+
+    def parse_result_to_segments(self, result: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        解析识别结果为分段格式。
+        支持 qwen3-asr-flash 同步结果、OpenAI compatible 结果，以及 qwen3-asr-flash-filetrans 异步结果。
+        """
+        segments: List[Dict[str, Any]] = []
+
+        def append_segment(text: Any, start: Any = 0.0, end: Any = 0.0, *, ms: bool = False):
+            cleaned = str(text or "").strip()
+            if not cleaned:
+                return
+            try:
+                s_val = float(start or 0.0)
+            except (TypeError, ValueError):
+                s_val = 0.0
+            try:
+                e_val = float(end or 0.0)
+            except (TypeError, ValueError):
+                e_val = 0.0
+            if ms:
+                s_val /= 1000.0
+                e_val /= 1000.0
+            segments.append({"text": cleaned, "start": s_val, "end": e_val})
+
+        def walk_filetrans(obj: Any):
+            if isinstance(obj, dict):
+                sentences = obj.get("sentences")
+                if isinstance(sentences, list):
+                    for sent in sentences:
+                        if not isinstance(sent, dict):
+                            continue
+                        text = sent.get("text") or sent.get("sentence") or sent.get("transcript")
+                        start = sent.get("begin_time", sent.get("start_time", sent.get("start", 0)))
+                        end = sent.get("end_time", sent.get("end", 0))
+                        ms = "begin_time" in sent or "end_time" in sent
+                        append_segment(text, start, end, ms=ms)
+                    return
+
+                if any(k in obj for k in ("begin_time", "start_time", "start")) and ("text" in obj):
+                    start = obj.get("begin_time", obj.get("start_time", obj.get("start", 0)))
+                    end = obj.get("end_time", obj.get("end", 0))
+                    ms = "begin_time" in obj or "end_time" in obj
+                    append_segment(obj.get("text"), start, end, ms=ms)
+                    return
+
+                for key in ("transcription", "output", "results", "result", "data", "transcripts"):
+                    if key in obj:
+                        walk_filetrans(obj[key])
+            elif isinstance(obj, list):
+                for item in obj:
+                    walk_filetrans(item)
+
+        if "task_result" in result or "transcription" in result:
+            walk_filetrans(result.get("transcription") or result.get("task_result"))
+            if segments:
+                return segments
+
+        if "output" in result and "choices" in result["output"]:
+            choice = result["output"]["choices"][0]
+            message = choice.get("message", {})
+            content = message.get("content", [])
+            if isinstance(content, str):
+                append_segment(content)
+            else:
+                for item in content:
+                    if isinstance(item, dict) and "text" in item:
+                        append_segment(item["text"])
+                    elif isinstance(item, str):
+                        append_segment(item)
+            return segments
+
+        if "choices" in result:
+            choice = (result.get("choices") or [{}])[0]
+            message = choice.get("message", {})
+            content = message.get("content", [])
+            if isinstance(content, str):
+                append_segment(content)
+            elif isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and "text" in item:
+                        append_segment(item["text"])
+                    elif isinstance(item, str):
+                        append_segment(item)
+            return segments
+
+        walk_filetrans(result)
+        return segments
+
+
+# 全局服务实例
+_bailian_service: Optional[BailianASRService] = None
+
+
+def get_bailian_service() -> BailianASRService:
+    """获取百炼 ASR 服务实例"""
+    global _bailian_service
+    whisper_cfg = getattr(config, "whisper", {}) or {}
+    current_region = str(whisper_cfg.get("bailian_region", "cn") or "cn").strip().lower()
+    expected_region = current_region if current_region in {"cn", "intl"} else "cn"
+    if _bailian_service is None or _bailian_service.region != expected_region:
+        _bailian_service = BailianASRService(region=expected_region)
+    return _bailian_service
+
+
+def _extract_audio_from_video(video_path: str, output_audio_path: str) -> str:
+    """
+    从视频文件中提取音频
+    
+    Args:
+        video_path: 视频文件路径
+        output_audio_path: 输出音频路径
+        
+    Returns:
+        提取的音频文件路径
+    """
+    import subprocess
+    
+    cmd = [
+        "ffmpeg", "-y", "-i", video_path,
+        "-vn",  # 禁用视频
+        "-acodec", "libmp3lame",
+        "-ar", "16000",  # 采样率 16kHz
+        "-ac", "1",  # 单声道
+        "-b:a", "32k",  # 比特率 32kbps
+        output_audio_path
+    ]
+    
+    logger.info(f"从视频提取音频: {video_path} -> {output_audio_path}")
+    
+    try:
+        result = run_cancellable(cmd, capture_output=True, text=True, check=True)
+        logger.info(f"音频提取完成: {output_audio_path}")
+        return output_audio_path
+    except subprocess.CalledProcessError as e:
+        logger.error(f"音频提取失败: {e.stderr}")
+        raise RuntimeError(f"无法从视频提取音频: {video_path}")
+
+
+def _detect_silence_points(audio_path: str, min_silence_duration: float = 0.3, 
+                           silence_threshold: int = -40) -> List[float]:
+    """
+    检测音频中的静音点（用于语义分割）
+    
+    Args:
+        audio_path: 音频文件路径
+        min_silence_duration: 最小静音时长（秒）
+        silence_threshold: 静音阈值（dB）
+        
+    Returns:
+        静音点时间点列表（秒）
+    """
+    import subprocess
+    import re
+    
+    cmd = [
+        "ffmpeg", "-i", audio_path,
+        "-af", f"silencedetect=noise={silence_threshold}dB:d={min_silence_duration}",
+        "-f", "null", "-"
+    ]
+    
+    try:
+        result = run_cancellable(cmd, capture_output=True, text=True, check=False)
+        output = result.stderr
+        
+        # 解析静音检测结果
+        silence_starts = re.findall(r'silence_start: ([\d.]+)', output)
+        silence_ends = re.findall(r'silence_end: ([\d.]+)', output)
+        
+        # 取静音段的中间点作为分割点
+        split_points = []
+        for start, end in zip(silence_starts, silence_ends):
+            mid_point = (float(start) + float(end)) / 2
+            split_points.append(mid_point)
+        
+        logger.debug(f"检测到 {len(split_points)} 个静音分割点")
+        return split_points
+        
+    except Exception as e:
+        logger.warning(f"静音检测失败: {e}，将使用固定时长分割")
+        return []
+
+
+def _split_audio_semantic(audio_path: str, target_duration: int = 300, 
+                          output_dir: Optional[str] = None) -> List[tuple]:
+    """
+    智能语义分割音频（在静音点处分割，避免切断语句）
+    
+    Args:
+        audio_path: 音频文件路径
+        target_duration: 目标每段时长（秒），默认 5 分钟
+        output_dir: 输出目录
+        
+    Returns:
+        分割后的 (文件路径, 偏移时间) 列表
+    """
+    import subprocess
+    import tempfile
+    
+    if output_dir is None:
+        output_dir = tempfile.mkdtemp(prefix="bailian_asr_")
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # 获取音频时长
+    probe_cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", audio_path
+    ]
+    try:
+        result = run_cancellable(probe_cmd, capture_output=True, text=True, check=True)
+        total_duration = float(result.stdout.strip())
+    except (subprocess.CalledProcessError, ValueError) as e:
+        logger.error(f"获取音频时长失败: {e}")
+        raise RuntimeError(f"无法获取音频时长: {audio_path}")
+    
+    logger.info(f"音频总时长: {total_duration:.2f}秒，目标每段 {target_duration}秒")
+    
+    # 检测静音点
+    silence_points = _detect_silence_points(audio_path)
+    
+    # 计算分割点（优先在静音点分割）
+    split_points = [0]
+    current_pos = 0
+    
+    while current_pos + target_duration < total_duration:
+        target_pos = current_pos + target_duration
+        
+        # 在目标位置附近找最近的静音点（±10秒范围内）
+        best_point = target_pos
+        min_distance = float('inf')
+        
+        for sp in silence_points:
+            if current_pos < sp < current_pos + target_duration + 10:
+                distance = abs(sp - target_pos)
+                if distance < min_distance and distance < 10:
+                    min_distance = distance
+                    best_point = sp
+        
+        split_points.append(best_point)
+        current_pos = best_point
+    
+    split_points.append(total_duration)
+    
+    logger.info(f"语义分割点: {len(split_points)-1} 段")
+    
+    # 分割音频
+    segments = []
+    base_name = Path(audio_path).stem
+    
+    for i in range(len(split_points) - 1):
+        start = split_points[i]
+        end = split_points[i + 1]
+        segment_path = os.path.join(output_dir, f"{base_name}_{i:04d}_{int(start):06d}.mp3")
+        
+        split_cmd = [
+            "ffmpeg", "-y", "-i", audio_path,
+            "-ss", str(start), "-to", str(end),
+            "-ar", "16000", "-ac", "1", "-b:a", "32k",
+            "-f", "mp3", segment_path
+        ]
+        
+        try:
+            run_cancellable(split_cmd, capture_output=True, check=True)
+            segments.append((segment_path, start))
+            logger.debug(f"分割片段 {i+1}: {start:.2f}-{end:.2f}秒")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"分割片段 {i+1} 失败: {e}")
+            raise
+    
+    logger.info(f"音频语义分割完成，共 {len(segments)} 个片段")
+    return segments
+
+
+def recognize_with_bailian(
+    audio_path: str,
+    model: Optional[str] = None,
+    language: str = "zh",
+    segment_duration: int = 300,
+    **kwargs
+) -> List[Dict[str, Any]]:
+    """
+    使用百炼 ASR 识别音频/视频（支持大文件自动分片，语义分割）
+    
+    处理流程:
+    1. 如果是视频，先提取音频
+    2. 如果音频 > 10MB，使用语义分割（在静音点处分割）
+    3. 逐段识别并合并结果
+    
+    Args:
+        audio_path: 音频/视频文件路径
+        model: 模型名称，None 则自动选择
+        language: 语言
+        segment_duration: 目标分片时长（秒），默认 5 分钟
+        
+    Returns:
+        识别结果分段列表
+    """
+    import tempfile
+    
+    service = get_bailian_service()
+    temp_files_to_cleanup = []
+    
+    try:
+        # 判断文件类型
+        ext = Path(audio_path).suffix.lower()
+        is_video = ext in ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v']
+        
+        # 步骤 1: 如果是视频，提取音频
+        if is_video:
+            logger.info(f"检测到视频文件，先提取音频: {audio_path}")
+            temp_audio = os.path.join(tempfile.mkdtemp(), "extracted_audio.mp3")
+            audio_path = _extract_audio_from_video(audio_path, temp_audio)
+            temp_files_to_cleanup.append(audio_path)
+        
+        # 步骤 2: 检查音频大小
+        file_size = os.path.getsize(audio_path)
+        file_size_mb = file_size / 1024 / 1024
+        
+        effective_model = model or str((getattr(config, "whisper", {}) or {}).get("bailian_model", "") or "qwen3-asr-flash")
+
+        if service._is_filetrans_model(effective_model) or service._is_recorded_file_model(effective_model):
+            logger.info(
+                f"使用百炼异步录音文件识别: {audio_path} ({file_size_mb:.2f}MB), "
+                f"model={effective_model}, verify_ssl={service.verify_ssl}"
+            )
+            result = service.recognize_filetrans_audio(
+                audio_path,
+                model=effective_model,
+                language=language,
+                enable_itn=kwargs.get("enable_itn", True),
+            )
+            return service.parse_result_to_segments(result)
+
+        if file_size_mb <= 10:  # 小于 10MB 直接用短音频接口
+            logger.info(
+                f"使用百炼短音频识别: {audio_path} ({file_size_mb:.2f}MB), "
+                f"transport_mode={service.transport_mode}, verify_ssl={service.verify_ssl}"
+            )
+            result = service._recognize_short_audio_with_fallbacks(
+                audio_path,
+                model=effective_model,
+                language=language,
+                **kwargs,
+            )
+            return service.parse_result_to_segments(result)
+
+        # 步骤 3: 大文件使用语义分割
+        logger.info(f"音频较大 ({file_size_mb:.2f}MB)，使用语义分割识别")
+        
+        segments_info = _split_audio_semantic(audio_path, segment_duration=segment_duration)
+        all_segments = []
+        
+        for idx, (segment_path, time_offset) in enumerate(segments_info):
+            logger.info(f"识别片段 {idx + 1}/{len(segments_info)} (偏移: {time_offset:.2f}s)")
+            
+            try:
+                if service._is_recorded_file_model(effective_model):
+                    result = service.recognize_filetrans_audio(
+                        segment_path,
+                        model=effective_model,
+                        language=language,
+                        enable_itn=kwargs.get("enable_itn", True),
+                    )
+                else:
+                    result = service.recognize_short_audio(
+                        segment_path,
+                        model=effective_model,
+                        language=language,
+                        **kwargs
+                    )
+                segments = service.parse_result_to_segments(result)
+                
+                # 调整时间戳
+                for seg in segments:
+                    seg["start"] += time_offset
+                    seg["end"] += time_offset
+                
+                all_segments.extend(segments)
+                
+                # 清理临时片段文件
+                try:
+                    os.remove(segment_path)
+                except OSError:
+                    pass  # IO/队列清理，忽略异常
+            except Exception as e:
+                logger.error(f"片段 {idx + 1} 识别失败: {e}")
+                # 继续处理其他片段
+        
+        # 清理分割临时目录
+        if segments_info:
+            try:
+                os.rmdir(os.path.dirname(segments_info[0][0]))
+            except OSError:
+                pass  # IO/队列清理，忽略异常
+        logger.info(f"语义分片识别完成，共 {len(all_segments)} 段结果")
+        return all_segments
+        
+    finally:
+        # 清理临时提取的音频文件
+        for temp_file in temp_files_to_cleanup:
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+                    logger.debug(f"清理临时文件: {temp_file}")
+            except OSError:
+                pass  # IO/队列清理，忽略异常

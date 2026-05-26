@@ -1,0 +1,31 @@
+services:
+  aivideo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aivideo:latest
+    container_name: aivideo
+    ports:
+      - "8866:8866"
+    volumes:
+      - type: bind
+        source: ${WORKSPACE_ROOT:-../AIVideo-workspace}
+        target: /AIVideo-workspace
+      - ./config.toml:/AIVideo/config.toml
+      - ./resource:/AIVideo/resource:ro
+
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
+      - APP_PORT=8866
+      - AIVIDEO_WORKSPACE_ROOT=/AIVideo-workspace
+      # 阿里云百炼 API Key（字幕识别/LLM 调用共用）
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8866/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

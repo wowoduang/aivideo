@@ -1,0 +1,58 @@
+{
+  "source_media_path": "E:\\aivideo\\tests\\movie_story\\fixtures\\funasr_test.wav",
+  "effective_audio_path": "E:\\aivideo\\tests\\movie_story\\fixtures\\funasr_test.wav",
+  "speaker_diagnostics": {
+    "raw_speaker_ids_count": 2,
+    "raw_speaker_ids": [
+      "SPEAKER_00",
+      "SPEAKER_01"
+    ],
+    "normalized_speaker_ids_count": 2,
+    "normalized_speakers": [
+      {
+        "speaker_id": "SPEAKER_01",
+        "segment_count": 1,
+        "total_duration": 8.0,
+        "examples": [
+          {
+            "start": 464.0,
+            "end": 472.0,
+            "text": "欠税不交"
+          }
+        ]
+      },
+      {
+        "speaker_id": "SPEAKER_00",
+        "segment_count": 1,
+        "total_duration": 4.0,
+        "examples": [
+          {
+            "start": 284.0,
+            "end": 288.0,
+            "text": "我要天天吃大饼"
+          }
+        ]
+      }
+    ]
+  },
+  "raw_result": {
+    "transcripts": [
+      {
+        "sentences": [
+          {
+            "begin_time": 284000,
+            "end_time": 288000,
+            "text": "我要天天吃大饼",
+            "speaker_id": 0
+          },
+          {
+            "begin_time": 464000,
+            "end_time": 472000,
+            "text": "欠税不交",
+            "speaker_id": 1
+          }
+        ]
+      }
+    ]
+  }
+}

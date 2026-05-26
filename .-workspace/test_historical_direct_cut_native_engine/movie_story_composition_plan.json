@@ -1,0 +1,59 @@
+{
+  "mode": "movie_story",
+  "video_path": "demo.mp4",
+  "movie_title": "",
+  "target_duration_seconds": 480,
+  "segments": [
+    {
+      "segment_id": "movie_story_seg_0001",
+      "video_start": 0.0,
+      "video_end": 60.0,
+      "timeline_start": 0.0,
+      "timeline_end": 60.0,
+      "audio_mode": "raw",
+      "narration_text": "",
+      "narration_audio_path": "",
+      "selection_reason": [
+        "plot:历史剧快速粗切",
+        "audio:raw"
+      ],
+      "picture": "a",
+      "audio_strategy": "raw",
+      "source_clip_id": "historical_fast_cut_001",
+      "clip_source": "hybrid",
+      "source_scene_id": "subtitle_0003",
+      "raw_audio_worthy": true,
+      "trim_strategy": "movie_story_semantic_window",
+      "original_duration": 60.0,
+      "planned_duration": 60.0,
+      "match_strategy": "movie_story_script_item",
+      "movie_story_validation": {},
+      "semantic_start": null,
+      "semantic_end": null,
+      "story_highlight_type": null
+    }
+  ],
+  "audio_tracks": {
+    "bgm_path": "",
+    "narration_path": "",
+    "keep_raw_audio": true
+  },
+  "metadata": {
+    "source_pipeline": "movie_story_native_engine",
+    "composition_bridge_stage": "stage_m",
+    "selected_clip_count": 1,
+    "script_item_count": 1,
+    "narration_evidence_count": 3,
+    "story_highlight_count": 3,
+    "generated_at": "2026-05-26T10:47:58.402397",
+    "visual_mode": "off",
+    "generation_mode": "balanced",
+    "highlight_only_mode": false,
+    "narration_llm_mode": "direct_cut_first",
+    "subtitle_source": "test",
+    "subtitle_backend": "test",
+    "migration_stage": "production",
+    "movie_story_strategy": "legacy_understanding",
+    "direct_cut_first": true
+  }
+}

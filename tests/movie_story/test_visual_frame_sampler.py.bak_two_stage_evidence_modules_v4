@@ -1,0 +1,23 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""Tests for visual_frame_sampler planning functions."""
+
+import pytest
+
+from app.services.movie_story.visual_frame_sampler import sample_times_for_window
+
+
+def test_sample_times_for_window_uses_cost_capped_three_frame_plan() -> None:
+    assert sample_times_for_window(10.0, 20.0, desired_count=3) == [12.0, 15.0, 18.0]
+
+
+def test_sample_times_for_window_caps_frame_count() -> None:
+    times = sample_times_for_window(0.0, 10.0, desired_count=10, max_count=4)
+    assert len(times) == 4
+    assert times == [2.0, 4.0, 6.0, 8.0]
+
+
+def test_sample_times_for_window_rejects_invalid_window() -> None:
+    with pytest.raises(ValueError):
+        sample_times_for_window(5.0, 5.0, desired_count=1)
