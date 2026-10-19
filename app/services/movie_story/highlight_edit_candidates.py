@@ -164,6 +164,11 @@ def _build_scene_candidate(
     boundary_candidates: List[float],
     subtitle_segment_map: Dict[str, Dict[str, Any]],
 ) -> Dict[str, Any]:
+    """把场景窗口转换成短视频候选对象。
+    
+    该 helper 应保持确定性，封装时间范围、字幕窗口、证据分数和来源字段；
+    后续 selection/composition 会消费这个候选结构。
+    """
     scene_text = str(scene.get("subtitle_text", "") or " ".join(scene.get("subtitle_texts") or [])).strip()
     start = float(scene.get("start", 0.0) or 0.0)
     end = float(scene.get("end", start) or start)

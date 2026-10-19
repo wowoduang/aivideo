@@ -47,7 +47,7 @@ from app.services.movie_story.edit_modes import (
     resolve_unified_mode,
 )
 from app.services.movie_story.edit_result import UnifiedEditResult
-from app.services.movie_story.engines import run_highlight_edit_engine
+from app.services.highlight_edit_pipeline import run_highlight_edit_pipeline
 from app.services.movie_story.two_round_feature_modes import run_movie_story_two_round_feature_mode
 
 ProgressCallback = Optional[Callable[[int, str], None]]
@@ -155,7 +155,7 @@ def run_highlight_request(
 
     mode_info = resolve_unified_mode(ENTRY_HIGHLIGHT_SCRIPT, request)
     prefer_raw_audio = bool(request.get("prefer_raw_audio", True)) or mode_info.mode == RAW_HIGHLIGHT
-    return run_highlight_edit_engine(
+    return run_highlight_edit_pipeline(
         video_path=str(request.get("video_path", "") or ""),
         mode=engine_mode_for_highlight(mode_info.mode),
         target_duration_seconds=int(request.get("target_duration_seconds", 480) or 480),

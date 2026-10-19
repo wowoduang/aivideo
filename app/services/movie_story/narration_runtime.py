@@ -10,7 +10,7 @@ segment was produced by batch/full/hybrid/fallback mode.
 
 from typing import Any, Dict, List
 
-from app.services.generate_narration_script_clean import (
+from app.services.generate_narration_script import (
     generate_narration_from_scene_evidence as legacy_generate_narration_from_scene_evidence,
 )
 from app.services.movie_story.time_utils import coerce_time_pair

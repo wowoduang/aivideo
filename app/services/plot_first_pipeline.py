@@ -8,11 +8,11 @@ from typing import Any, Callable, Dict, List, Optional
 from loguru import logger
 
 from app.services.evidence_fuser import fuse_scene_evidence
-from app.services.generate_narration_script_clean import generate_narration_from_scene_evidence
+from app.services.generate_narration_script import generate_narration_from_scene_evidence
 from app.services.plot_chunker import build_plot_chunks_from_subtitles
 from app.services.scene_builder import build_video_boundary_candidates
 from app.services.story_boundary_aligner import align_story_boundaries, collect_candidate_boundaries
-from app.services.plot_understanding_clean import add_local_understanding, build_global_summary
+from app.services.plot_understanding import add_local_understanding, build_global_summary
 from app.services.preflight_check import PreflightError, validate_script_items
 from app.services.representative_frames import extract_representative_frames_for_scenes
 from app.services.script_fallback import ensure_script_shape

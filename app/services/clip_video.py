@@ -20,6 +20,7 @@ from pathlib import Path
 from app.services.media_duration import inspect_media_file, summarize_media_file
 from app.services.video_working_copy import ensure_working_video_copy
 from app.utils import ffmpeg_utils, utils
+from app.utils import utils
 
 def _split_timestamp(timestamp: str) -> tuple[str, str]:
     raw = str(timestamp or "").strip()
@@ -1013,10 +1014,7 @@ def clip_video_unified(
 
     # 设置输出目录
     if output_dir is None:
-        output_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "storage", "temp", "clip_video_unified", task_id
-        )
+        output_dir = utils.temp_dir(os.path.join("clip_video_unified", task_id))
 
     # 确保输出目录存在
     Path(output_dir).mkdir(parents=True, exist_ok=True)

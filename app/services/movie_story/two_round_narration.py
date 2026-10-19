@@ -30,6 +30,12 @@ def debug_dir() -> Path:
 
 
 def write_debug(name: str, text: Any) -> None:
+    """写入基础双轮链调试文本。
+    
+    调试文件属于运行产物，只用于排查 prompt/LLM 输出问题；
+    调用方不应依赖这里的文件作为正式业务结果。失败时直接抛错，
+    避免静默吞掉调试输出问题。
+    """
     try:
         (debug_dir() / name).write_text(str(text or ""), encoding="utf-8")
     except Exception:
@@ -37,6 +43,12 @@ def write_debug(name: str, text: Any) -> None:
 
 
 def response_to_text(response: Any) -> str:
+    """从兼容 OpenAI ChatCompletion 形态的响应中提取文本。
+    
+    这个函数只做响应结构归一化，不负责解释模型输出内容；
+    调用方随后再进入结构分析/文案解析阶段。这里保持显式报错，
+    防止上游 LLM SDK 响应格式变化时被误判为空结果。
+    """
     if response is None:
         return ""
     if isinstance(response, str):
@@ -62,6 +74,11 @@ def response_to_text(response: Any) -> str:
 
 
 def extract_raw_srt(full_prompt: str) -> str:
+    """从 prompt 文本中提取原始字幕块。
+    
+    基础双轮链的第一轮 prompt 会携带完整字幕；该函数只恢复其中
+    【原始字幕】区域，供调试或兼容路径使用，不在这里解读剧情语义。
+    """
     text = str(full_prompt or "")
     best_index = -1
     best_marker = ""
@@ -76,11 +93,21 @@ def extract_raw_srt(full_prompt: str) -> str:
 
 
 def env_text(name: str, default: str) -> str:
+    """读取环境变量文本并做空白归一化。
+    
+    用于双轮链少量运行配置读取。缺失时返回默认值，不承担业务 fallback；
+    真正的模型/流程缺失仍应由调用方显式报错。
+    """
     value = os.getenv(name)
     return value.strip() if value and value.strip() else default
 
 
 def build_analysis_prompt(raw_srt_text: str) -> str:
+    """构造基础双轮链第一轮结构分析 prompt。
+    
+    本函数只拼接既有 prompt 模板和输入材料，不修改提示词语义。
+    两轮提示词当前不是普通重构对象，除非用户明确要求。
+    """
     return ANALYSIS_PROMPT_TEMPLATE.format(
         title=env_text("MOVIE_STORY_TITLE", "未知剧名"),
         episode_info=env_text("MOVIE_STORY_EPISODE_INFO", "本集剧情由字幕判断"),
@@ -116,6 +143,11 @@ def sanitize_analysis_result(analysis_result: str) -> str:
 
 
 def build_writer_prompt(analysis_result: str) -> str:
+    """构造基础双轮链第二轮文案写作 prompt。
+    
+    输入必须是第一轮结构分析结果和原始 prompt 材料；
+    本函数不做片段重选、不做视觉补充，也不改写第二轮提示词语义。
+    """
     selected_mainline = env_text(
         "MOVIE_STORY_SELECTED_MAINLINE",
         "请从分析结果中的主线候选里，自动选择1到3条最有解释力、最适合成片的主线；默认优先1到2条，素材复杂时允许第3条作为辅助线。",
@@ -161,6 +193,12 @@ def run_two_round_narration_from_prompt(
     full_prompt: str,
     call_llm: Callable[[str], Any],
 ) -> str:
+    """执行基础双轮链并返回文案条目列表。
+    
+    生产者是完整 raw_srt prompt；消费者是 movie_story 当前正式入口。
+    本函数只串联第一轮理解与第二轮写作，不接旧 native/legacy fallback，
+    也不在第二轮后追加视觉抽帧链。
+    """
     if os.getenv("MOVIE_STORY_TWO_ROUND_DISABLE", "").lower() in {"1", "true", "yes", "on"}:
         return response_to_text(call_llm(full_prompt))
 

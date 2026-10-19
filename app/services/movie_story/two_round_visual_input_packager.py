@@ -15,6 +15,10 @@ from typing import Any
 
 
 def _format_scene_context(*, scene_segments: list[dict[str, Any]]) -> str:
+    """格式化场景边界上下文，供第一轮多模态 prompt 使用。
+    
+    这里只呈现场景时间范围和客观上下文，不写剧情解读。
+    """
     lines = ["【场景边界】"]
     for scene in scene_segments:
         lines.append(
@@ -25,6 +29,11 @@ def _format_scene_context(*, scene_segments: list[dict[str, Any]]) -> str:
 
 
 def _format_focus_context(*, focus_segments: list[dict[str, Any]]) -> str:
+    """格式化 visual_focus_segments 上下文。
+    
+    输出告诉模型哪些时间段有更密集的视觉证据；
+    这些片段是第一轮前理解辅助，不等于最终剪辑片段。
+    """
     lines = ["【视觉片段抽帧】"]
     for segment in focus_segments:
         lines.append(
@@ -35,6 +44,10 @@ def _format_focus_context(*, focus_segments: list[dict[str, Any]]) -> str:
 
 
 def _format_frame_context(*, title: str, frames: list[dict[str, Any]]) -> str:
+    """格式化关键帧证据上下文。
+    
+    关键帧材料应保持时间戳、路径和客观证据关系，解释性交给多模态模型。
+    """
     lines = [title]
     for frame in frames:
         segment_id = frame.get("segment_id") or frame.get("scene_id") or ""
@@ -53,6 +66,12 @@ def build_two_round_visual_input_package(
     global_frames: list[dict[str, Any]],
     focus_frames: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    """构造第一轮多模态增强链的输入包。
+    
+    生产者是 visual_focus_segments、关键帧、字幕窗口和场景边界；
+    消费者是 two_round_visual_narration 的第一轮模型调用。
+    本函数不负责选择最终剪辑片段，也不在第二轮后追加视觉处理。
+    """
     prompt_context = "\n\n".join(
         [
             "【原始字幕】\n" + raw_srt_text.strip(),

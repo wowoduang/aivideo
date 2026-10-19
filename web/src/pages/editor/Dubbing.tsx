@@ -467,7 +467,7 @@ export default function DubbingPage() {
         voice_pitch: 1.0,
         tts_engine: '',
         subtitle_enabled: true,
-        font_name: 'SimHei',
+        font_name: "C:/Windows/Fonts/simhei.ttf",
         font_size: 36,
         text_fore_color: 'white',
         stroke_color: 'black',

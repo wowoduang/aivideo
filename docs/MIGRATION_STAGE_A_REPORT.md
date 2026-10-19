@@ -32,7 +32,7 @@
   - 新增阶段跟踪脚本。
   - 当前支持 `stage_a`，检查旧项目剧情理解/evidence 层是否移植达标。
 
-- `tests/test_movie_story_migration_stage_a.py`
+- `tests/test_movie_story_architecture_contract_a.py`
   - 新增阶段 A 单元测试。
 
 ## 阶段 A 验收标准
@@ -84,7 +84,7 @@ python tools/verify_movie_story_migration_stage.py \
 
 ```bash
 python3 -m compileall -q app/services/movie_story app/services/subtitle_first_pipeline.py tools/verify_movie_story_migration_stage.py
-pytest -q tests/test_movie_story_migration_stage_a.py tests/test_generate_narration_script_clean.py tests/test_plot_understanding_clean.py
+pytest -q tests/test_movie_story_architecture_contract_a.py tests/test_generate_narration_script.py tests/test_plot_understanding.py
 ```
 
 结果：

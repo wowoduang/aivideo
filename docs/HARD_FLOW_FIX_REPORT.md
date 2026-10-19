@@ -38,7 +38,7 @@
 
 - 有真实 LLM 配置时，默认 `movie_story_narration_llm_mode=batch`
 - 无真实 LLM 配置时，才进入 fallback
-- `batch/full` 会走真实 `generate_narration_script_clean.generate_narration_from_scene_evidence`
+- `batch/full` 会走真实 `generate_narration_script.generate_narration_from_scene_evidence`
 - 不再在正式解说生成失败后静默切换 fallback
 
 如果正式解说失败，会写入：

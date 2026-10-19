@@ -21,7 +21,7 @@ The old project did not send raw subtitle snippets directly to the narration wri
 ## New files
 
 - `app/services/movie_story/highlight_planning.py`
-- `tests/test_movie_story_migration_stage_b.py`
+- `tests/test_movie_story_architecture_contract_b.py`
 
 ## Modified files
 
@@ -60,7 +60,7 @@ Stage B does not call the final LLM writer. It only prepares and verifies the st
 ## Local validation performed
 
 - `python -m compileall -q app/services/movie_story tools/verify_movie_story_migration_stage.py`
-- `pytest -q tests/test_movie_story_migration_stage_a.py tests/test_movie_story_migration_stage_b.py`
+- `pytest -q tests/test_movie_story_architecture_contract_a.py tests/test_movie_story_architecture_contract_b.py`
 - Replayed the user's latest Stage-A audit package: Stage B failed before patch because `story_role`, `selection_reason`, `score_breakdown`, `narration_generation_input`, and arc roles were missing.
 - Replayed the same audit after Stage-B enrichment: 32/32 highlights passed, type_count=7, arc_count=4.
 

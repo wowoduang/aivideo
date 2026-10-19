@@ -16,6 +16,7 @@ from app.services import state as sm
 from app.services import runtime_context
 from app.services.process_control import ProcessCancelled, cancel_task_processes, tracked_process_counts
 from app.utils import utils
+from app.services.narration_text_sanitizer import sanitize_deliverable_narration_text
 
 
 _JOB_FUTURES: Dict[str, Future] = {}
@@ -116,6 +117,11 @@ def _job_executor() -> _DaemonJobExecutor:
 
 
 def _persist_job_metadata(task_id: str, *, status: str, progress: int, message: str = "", error: str = "", result: Optional[Dict[str, Any]] = None) -> None:
+    """持久化本地任务元数据。
+    
+    这是 runtime/state 层 helper，负责记录任务输入、输出和状态路径；
+    业务流程判断应交给对应服务入口，不应在这里接旧 movie_story fallback。
+    """
     existing = sm.state.get_task(task_id) or {}
     owner_email = str(existing.get("owner_email") or "").strip().lower()
     project_id = str(existing.get("project_id") or "").strip()
@@ -525,6 +531,7 @@ def _normalize_movie_story_script_preview_result(task_id: str, request: Dict[str
                 or row.get("main_text_evidence")
                 or ""
             ).strip()
+            narration = sanitize_deliverable_narration_text(narration)
             if not narration:
                 continue
             row["narration"] = narration

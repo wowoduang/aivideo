@@ -37,7 +37,7 @@ from typing import Any, Mapping
 
 from loguru import logger
 
-from app.services.generate_narration_script_clean import (
+from app.services.generate_narration_script import (
     _call_chat_completion,
     _raw_srt_build_items,
     _raw_srt_extract_rows,
@@ -308,7 +308,7 @@ def _resolve_vision_llm_settings(request: Mapping[str, Any]) -> tuple[str, str, 
     base_url = _first_value(request, ("vision_base_url", "vision_litellm_base_url", "movie_story_vision_base_url"))
     model = _first_value(request, ("vision_model", "vision_litellm_model_name", "movie_story_vision_model"))
     if not api_key or not model:
-        from app.services.llm_config import get_vision_llm_config
+        from app.services.llm.runtime_config import get_vision_llm_config
 
         cfg = get_vision_llm_config()
         api_key = api_key or str(cfg.get("api_key") or "").strip()

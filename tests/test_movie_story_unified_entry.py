@@ -50,7 +50,7 @@ def test_run_highlight_request_normalizes_raw_highlight(monkeypatch: pytest.Monk
         captured.update(kwargs)
         return {"success": True, "script_items": [], "composition_plan": {"mode": kwargs["mode"], "segments": []}}
 
-    monkeypatch.setattr(unified_entry, "run_highlight_edit_engine", fake_run_highlight_edit_engine)
+    monkeypatch.setattr(unified_entry, "run_highlight_edit_pipeline", fake_run_highlight_edit_engine)
 
     result = unified_entry.run_unified_edit_request(
         entry="highlight_script",

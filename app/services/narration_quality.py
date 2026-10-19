@@ -194,6 +194,55 @@ def normalize_script_segments(script_items: Sequence[Mapping[str, Any]] | None) 
     return out
 
 
+
+_CONFIDENCE_LABEL_SCORES: dict[str, float] = {
+    "asr_high": 0.90,
+    "asr_medium": 0.72,
+    "asr_low": 0.55,
+    "ocr_high": 0.90,
+    "ocr_medium": 0.72,
+    "ocr_low": 0.55,
+    "visual_high": 0.90,
+    "visual_medium": 0.72,
+    "visual_low": 0.55,
+    "subtitle_high": 0.90,
+    "subtitle_medium": 0.72,
+    "subtitle_low": 0.55,
+}
+
+
+def _normalize_evidence_confidence(raw: dict[str, object], source: str, index: int) -> float:
+    """将 evidence 置信度规范化为 0~1 数值，未知标签直接报错。"""
+    value = raw.get("confidence")
+    if value is None or value == "":
+        value = raw.get("score")
+    if value is None or value == "":
+        value = raw.get("importance_score")
+    if value is None or value == "":
+        value = 0.72
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped in _CONFIDENCE_LABEL_SCORES:
+            return _CONFIDENCE_LABEL_SCORES[stripped]
+        try:
+            confidence = float(stripped)
+        except ValueError as exc:
+            raise ValueError(
+                f"Unsupported evidence confidence label: source={source}, "
+                f"index={index}, value={value!r}"
+            ) from exc
+    else:
+        confidence = float(value)
+
+    if not 0.0 <= confidence <= 1.0:
+        raise ValueError(
+            f"Evidence confidence out of range: source={source}, "
+            f"index={index}, value={value!r}, confidence={confidence}"
+        )
+
+    return confidence
+
 def _evidence_from_item(raw: Mapping[str, Any], source: str, index: int) -> JsonDict:
     start = parse_time_to_seconds(raw.get("start") or raw.get("video_start") or raw.get("startTime") or raw.get("timestamp"), 0.0) or 0.0
     end = _end_from_item(raw, start)
@@ -203,7 +252,7 @@ def _evidence_from_item(raw: Mapping[str, Any], source: str, index: int) -> Json
         "id": str(ev_id), "start": round(start, 3), "end": round(max(start + 0.1, end), 3), "duration": round(max(0.1, end - start), 3),
         "type": source, "content": content, "characters": raw.get("characters") or raw.get("speaker_names") or [],
         "scene": _text(raw.get("scene") or raw.get("scene_id") or raw.get("story_function"), 200),
-        "confidence": float(raw.get("confidence") or raw.get("score") or raw.get("importance_score") or 0.72),
+        "confidence": _normalize_evidence_confidence(raw, source, index),
         "raw_ref": _text(raw.get("path") or raw.get("artifact_type") or source),
     }
 

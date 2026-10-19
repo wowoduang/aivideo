@@ -39,7 +39,7 @@ narration_finalize.finalize_narration_script
 
 ## 仍保留的兼容策略
 
-- 仍然调用 `generate_narration_script_clean.py` 作为成熟旧解说器。
+- 仍然调用 `generate_narration_script.py` 作为成熟旧解说器。
 - 没有隐藏新增 LLM 重写调用，避免成本和不可控漂移。
 - `narration_finalize.py` 只做确定性校验和空白修复；非空 review 项只打标，不擅自改写。
 

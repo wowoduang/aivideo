@@ -27,6 +27,7 @@ from PIL import ImageFont
 from app.utils import utils
 from app.models.schema import AudioVolumeDefaults
 from app.services.audio_normalizer import AudioNormalizer, normalize_audio_for_mixing
+from pathlib import Path
 
 
 def is_valid_subtitle_file(subtitle_path: str) -> bool:
@@ -62,6 +63,62 @@ def is_valid_subtitle_file(subtitle_path: str) -> bool:
         logger.warning(f"检查字幕文件时出错: {str(e)}")
         return False
 
+
+
+
+def _resolve_subtitle_font_path(subtitle_font: object) -> str | None:
+    """Resolve a configured subtitle font into a readable font file path.
+
+    The request parameter may be a real font file path such as
+    ``C:/Windows/Fonts/simhei.ttf`` or a short font name such as ``SimHei``.
+    Short names are resolved only inside ``utils.font_dir()`` and only when a
+    same-stem .ttf/.ttc/.otf file actually exists.
+
+    This function intentionally does not fall back to unrelated system fonts.
+    A missing configured font raises an explicit error so the bad configuration
+    is visible in logs.
+    """
+    if subtitle_font is None:
+        return None
+
+    font_text = str(subtitle_font).strip()
+    if not font_text:
+        return None
+
+    path_candidate = Path(font_text)
+    looks_like_path = (
+        path_candidate.is_absolute()
+        or "/" in font_text
+        or "\\" in font_text
+        or ":" in font_text
+        or path_candidate.parent != Path(".")
+    )
+
+    if looks_like_path:
+        base_candidates = [path_candidate]
+    else:
+        base_candidates = [Path(utils.font_dir()) / font_text]
+
+    candidates: list[Path] = []
+    for base in base_candidates:
+        if base.is_file():
+            candidates.append(base)
+        if not base.suffix:
+            for suffix in (".ttf", ".ttc", ".otf"):
+                candidate = base.with_suffix(suffix)
+                if candidate.is_file():
+                    candidates.append(candidate)
+
+    if not candidates:
+        raise FileNotFoundError(
+            "Subtitle font does not point to a readable font file: "
+            f"{font_text}. Configure a real .ttf/.ttc/.otf path or place a "
+            "same-stem font file under workspace fonts."
+        )
+
+    resolved = str(candidates[0]).replace("\\", "/")
+    ImageFont.truetype(resolved, 10)
+    return resolved
 
 def merge_materials(
     video_path: str,
@@ -286,7 +343,7 @@ def merge_materials(
     # 处理字体路径
     font_path = None
     if subtitle_path and subtitle_font:
-        font_path = os.path.join(utils.font_dir(), subtitle_font)
+        font_path = _resolve_subtitle_font_path(subtitle_font)
         if os.name == "nt":
             font_path = font_path.replace("\\", "/")
         logger.info(f"使用字体: {font_path}")

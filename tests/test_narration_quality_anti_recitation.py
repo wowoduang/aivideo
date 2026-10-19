@@ -1,4 +1,4 @@
-from app.services.generate_narration_script_clean import (
+from app.services.generate_narration_script import (
     generate_narration_from_scene_evidence,
     _is_verbatim_like,
 )

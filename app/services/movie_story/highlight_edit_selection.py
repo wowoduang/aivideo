@@ -455,6 +455,10 @@ def _peak_window_text_rerank_score(
     snapped_end: float,
     highlight_profile: Optional[Dict[str, Any]] = None,
 ) -> float:
+    """计算峰值窗口文本重排分数。
+    
+    文本只作为候选排序信号，不作为本地剧情解读结论。
+    """
     profile_config = _window_text_profile_config(highlight_profile)
     text_reliability = float(profile_config["text_reliability"])
     route_weight = float(profile_config["route_weight"])
@@ -563,6 +567,10 @@ def _peak_window_character_focus_score(
     main_characters: List[str],
     highlight_profile: Optional[Dict[str, Any]] = None,
 ) -> float:
+    """计算峰值窗口中角色/人物相关线索的局部评分。
+    
+    该分数只用于候选排序，不在本地推断最终人物关系结论。
+    """
     if not window or not main_characters:
         return 0.0
 
@@ -627,6 +635,10 @@ def _peak_window_payoff_arc_score(
     related_chunk: Dict[str, Any],
     highlight_profile: Optional[Dict[str, Any]] = None,
 ) -> float:
+    """计算峰值窗口中的剧情回报/转折弧线评分。
+    
+    该 helper 服务候选排序；最终叙事解释仍交给双轮链或文案链。
+    """
     if not window:
         return 0.0
 
@@ -688,6 +700,11 @@ def _build_peak_window_anchors(
     highlight_profile: Optional[Dict[str, Any]] = None,
     main_characters: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
+    """构造高光峰值窗口锚点。
+    
+    该函数服务长视频拆短视频候选召回，综合文本、时间轴和局部密度信号；
+    后续应拆成候选收集、窗口扩展、去重排序等 helper。
+    """
     ordered = sorted(
         (dict(item) for item in (candidate_clips or [])),
         key=lambda item: (
@@ -876,6 +893,11 @@ def _append_selection_reasons(clip: Dict[str, Any], *reasons: str) -> Dict[str, 
 
 
 def _merge_clip_metadata(preferred: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    """合并候选片段的剪辑元数据。
+    
+    输出给后续 composition/export 消费；这里应只做字段归一和证据合并，
+    不要引入旧 movie_story native 主流程判断。
+    """
     merged = dict(preferred)
     alternate = dict(incoming)
 
@@ -1083,6 +1105,10 @@ def _build_highlight_recut_selection_pool(
     highlight_profile: Optional[Dict[str, Any]] = None,
     select_highlight_fn: Optional[Callable[..., List[Dict[str, Any]]]] = None,
 ) -> List[Dict[str, Any]]:
+    """构造精彩粗剪/短视频候选选择池。
+    
+    生产者是 timeline/highlight 候选，消费者是前端复核或剪辑组合流程。
+    """
     if not candidate_clips:
         return []
 

@@ -266,7 +266,7 @@ except Exception:
 
 **存量超大文件（待拆分）：**
 ```
-generate_narration_script_clean.py  2536 行 → 拆出 raw_srt_narration.py
+generate_narration_script.py  2536 行 → 拆出 raw_srt_narration.py
 voice.py                            2134 行 → 拆出 azure_voices.py
 timeline_runtime.py                 1928 行 → 按算法阶段拆子模块
 ```
@@ -278,7 +278,7 @@ timeline_runtime.py                 1928 行 → 按算法阶段拆子模块
 ```
 ✅ raw_srt_narration.py     — 原始 SRT → 双轮解说链路
 ✅ voice_cache.py           — TTS 音频缓存读写
-❌ generate_narration_script_clean.py  — 标准解说生成 + 历史剧链路 + raw_srt 链路（三件事）
+❌ generate_narration_script.py  — 标准解说生成 + 历史剧链路 + raw_srt 链路（三件事）
 ```
 
 ### 7.3 禁止往已超大的文件里追加代码
@@ -353,7 +353,7 @@ result = json.loads(raw_text)  # 大模型输出不稳定，必须加 try-except
 ### 9.1 测试文件位置
 
 ```
-✅ tests/test_generate_narration_script_clean.py
+✅ tests/test_generate_narration_script.py
 ✅ tests/llm/test_llm_service.py
 ❌ app/services/llm/test_llm_service.py  （生产代码目录里放测试）
 ```
@@ -386,7 +386,7 @@ class TestRawSrtNarration(unittest.TestCase):
     def test_route_with_raw_subtitle_path_calls_raw_srt_chain(self):
         """传 raw_subtitle_path 时路由到 raw_srt 链路"""
         with unittest.mock.patch(
-            "app.services.generate_narration_script_clean._generate_raw_srt_narration_items"
+            "app.services.generate_narration_script._generate_raw_srt_narration_items"
         ) as mock:
             mock.return_value = [{"start": 30, "end": 70, "narration": "测试"}]
             narration_clean.generate_narration_from_scene_evidence(
@@ -505,7 +505,7 @@ AI 工具读取这个文件的前 40 行，就能获得完整上下文，无需�
 from __future__ import annotations
 
 """
-generate_narration_script_clean.py
+generate_narration_script.py
 
 影视解说文案生成主模块。接收场景证据列表，调用 LLM 生成逐片段解说词。
 """
@@ -615,7 +615,7 @@ docs/decisions/
 **日期**：2026-03-15
 **状态**：已实施（Active）
 **影响文件**：
-- app/services/generate_narration_script_clean.py
+- app/services/generate_narration_script.py
 - app/services/movie_story/two_round_narration.py
 
 ## 背景
@@ -726,15 +726,15 @@ def enrich_candidates_with_evidence(
 
 ## 🔴 高优先级
 
-### [PEND-001] 拆分 generate_narration_script_clean.py
+### [PEND-001] 拆分 generate_narration_script.py
 - 文件现状：2780 行，3 条链路混合
 - 目标：提取 _raw_srt_* 函数族（约 450 行）到 movie_story/raw_srt_narration.py
 - 前置条件：raw_srt 链路测试覆盖率 ≥ 80%（当前 0%）
-- 影响文件：generate_narration_script_clean.py, direct_cut_runtime.py
+- 影响文件：generate_narration_script.py, direct_cut_runtime.py
 - 验收标准：主文件降至 ≤ 800 行，所有现有测试通过
 
 ### [PEND-002] 补充 raw_srt 链路测试
-- 目标：tests/test_generate_narration_script_clean.py 新增 TestRawSrtNarration 类
+- 目标：tests/test_generate_narration_script.py 新增 TestRawSrtNarration 类
 - 最少覆盖：时间码解析、空输入容错、路由分支选择（共 6 个测试用例）
 - 相关 ADR：ADR-002
 
@@ -763,7 +763,7 @@ def enrich_candidates_with_evidence(
 **给 AI 的 prompt 模板：**
 
 ```
-当前任务：[PEND-001] 拆分 generate_narration_script_clean.py
+当前任务：[PEND-001] 拆分 generate_narration_script.py
 
 相关上下文：
 - 目标文件 __CONTEXT__: [粘贴文件头的 __CONTEXT__ 字典]
@@ -771,7 +771,7 @@ def enrich_candidates_with_evidence(
 - 验收标准：主文件 ≤ 800 行，所有现有测试通过，新增 TestRawSrtNarration 6 个测试
 
 请在不影响现有功能的前提下执行，完成后：
-1. 更新 generate_narration_script_clean.py 的 __CONTEXT__.decisions
+1. 更新 generate_narration_script.py 的 __CONTEXT__.decisions
 2. 在 PENDING.md 中将 PEND-001 移到「已完成」并记录方案
 ```
 

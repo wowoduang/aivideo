@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 
 from loguru import logger
 
-from app.services.plot_understanding_clean import plan_story_highlights
+from app.services.plot_understanding import plan_story_highlights
 from app.services.movie_story.audit_runtime import _audit_config_value_v41, _audit_int_v41
 from app.services.movie_story.runtime_options import _has_real_llm_config, _runtime_config_value, _runtime_int
 from app.services.movie_story.story_runtime import (
@@ -207,6 +207,10 @@ def _build_story_candidates_from_evidence(scene_evidence: List[Dict[str, Any]]) 
 
 
 def _merge_highlight_segments(highlights: List[Dict[str, Any]], gap_threshold: float = 1.2) -> List[Dict[str, Any]]:
+    """合并相邻或重叠的高光候选片段。
+    
+    这是时间区间合并 helper，目标是减少重复候选并保持剪辑窗口连续。
+    """
     if not highlights:
         return []
 
@@ -325,6 +329,10 @@ def _resolve_highlight_selectivity(value: str) -> str:
 
 
 def _final_story_score(pkg: Dict, index: int, total: int) -> float:
+    """计算候选片段的最终故事价值分数。
+    
+    该分数服务长视频拆短视频候选排序；不要在这里恢复旧 subtitle-first 理解链。
+    """
     score = 0.0
     importance = str(pkg.get("importance_level") or "medium")
     plot_function = str(pkg.get("plot_function") or "")

@@ -14,7 +14,7 @@
 ## 2. 修复视频解说主链路
 
 - 删除 `subtitle_first_pipeline.py` 底部同名 passthrough adapter 覆盖逻辑。
-- 恢复 `generate_narration_script_clean.generate_narration_from_scene_evidence` 作为成熟 LLM 解说生成入口。
+- 恢复 `generate_narration_script.generate_narration_from_scene_evidence` 作为成熟 LLM 解说生成入口。
 - 将旧的裸 passthrough 解说函数保留为语义化 fallback：`normalize_script_items_without_retiming`，不再伪装成 LLM 解说生成器。
 - 明确主流程：
   1. timeline runtime 负责时间线与高光选择。

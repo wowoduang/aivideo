@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+from app.services.narration_text_sanitizer import sanitize_deliverable_narration_text, sanitize_deliverable_title_text
 
 """
 two_round_feature_modes.py
@@ -39,7 +40,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
 
-from app.services.generate_narration_script_clean import _generate_raw_srt_narration_items
+from app.services.generate_narration_script import _generate_raw_srt_narration_items
 from app.services.movie_story.two_round_visual_narration import generate_two_round_visual_narration_items
 
 ProgressCallback = Optional[Callable[[int, str], None]]
@@ -496,7 +497,57 @@ def _format_mmss(seconds: float) -> str:
     return f"{minutes:02d}:{sec:05.2f}"
 
 
+def _sanitize_two_round_artifact_payload(value: Any) -> Any:
+    """Clean deliverable narration/title fields before writing two-round artifacts."""
+    if isinstance(value, list):
+        return [_sanitize_two_round_artifact_payload(item) for item in value]
+
+    if not isinstance(value, dict):
+        return value
+
+    source_narration = sanitize_deliverable_narration_text(
+        str(value.get("narration") or value.get("text") or "")
+    )
+    cleaned: Dict[str, Any] = {}
+
+    for key, raw_value in value.items():
+        if key in {"narration", "text", "source_text"} and isinstance(raw_value, str):
+            cleaned[key] = sanitize_deliverable_narration_text(raw_value)
+            continue
+
+        if key in {"title", "section_title"} and isinstance(raw_value, str):
+            cleaned[key] = sanitize_deliverable_title_text(
+                raw_value,
+                fallback_text=source_narration,
+            )
+            continue
+
+        if isinstance(raw_value, (dict, list)):
+            cleaned[key] = _sanitize_two_round_artifact_payload(raw_value)
+            continue
+
+        cleaned[key] = raw_value
+
+    if source_narration:
+        if "narration" in cleaned:
+            cleaned["narration"] = sanitize_deliverable_narration_text(
+                str(cleaned.get("narration") or source_narration)
+            )
+        if "text" in cleaned:
+            cleaned["text"] = sanitize_deliverable_narration_text(
+                str(cleaned.get("text") or source_narration)
+            )
+
+        for key in ("title", "section_title"):
+            if key in cleaned:
+                cleaned[key] = sanitize_deliverable_title_text(
+                    str(cleaned.get(key) or ""),
+                    fallback_text=source_narration,
+                )
+
+    return cleaned
 def _write_json(path: Path, data: Any) -> None:
+    data = _sanitize_two_round_artifact_payload(data)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
 

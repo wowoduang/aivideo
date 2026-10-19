@@ -92,7 +92,7 @@ movie_story_typed_selector_error_policy = "fallback"
 
 ```text
 python3 -m compileall -q app/services app/api app/utils
-pytest -q tests/test_generate_narration_script_clean.py tests/test_plot_understanding_clean.py tests/test_movie_story_flow_debug_fix.py
+pytest -q tests/test_generate_narration_script.py tests/test_plot_understanding.py tests/test_movie_story_flow_debug_fix.py
 ```
 
 结果：

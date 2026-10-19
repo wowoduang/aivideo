@@ -25,6 +25,7 @@ from app.services import auth_store, job_events, job_history
 from app.models import const
 from app.api.deps import assert_rate_limit, require_user
 from app.utils import utils
+from app.services.narration_text_sanitizer import sanitize_deliverable_narration_text
 
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -261,6 +262,7 @@ def _normalize_movie_story_script_status_payload(payload: dict[str, Any]) -> dic
                 or row.get("main_text_evidence")
                 or ""
             ).strip()
+            narration = sanitize_deliverable_narration_text(narration)
             if not narration:
                 continue
             row["narration"] = narration

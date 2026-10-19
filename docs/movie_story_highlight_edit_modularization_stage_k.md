@@ -79,11 +79,11 @@ pytest -q \
 pytest -q \
   tests/test_subtitle_first_pipeline_prologue.py \
   tests/test_movie_story_narration_finalize.py \
-  tests/test_movie_story_migration_stage_a.py \
-  tests/test_movie_story_migration_stage_b.py \
-  tests/test_movie_story_migration_stage_c.py \
-  tests/test_movie_story_migration_stage_d.py \
-  tests/test_generate_narration_script_clean.py \
+  tests/test_movie_story_architecture_contract_a.py \
+  tests/test_movie_story_architecture_contract_b.py \
+  tests/test_movie_story_architecture_contract_c.py \
+  tests/test_movie_story_architecture_contract_d.py \
+  tests/test_generate_narration_script.py \
   tests/test_highlight_selector.py \
   tests/test_highlight_timeline_planner.py \
   tests/test_movie_story_flow_debug_fix.py \

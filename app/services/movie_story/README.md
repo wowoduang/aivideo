@@ -22,7 +22,7 @@
 
 8. `story_window.py`：片头/序幕、片尾/演职员表、下集预告、`story_end_time`、LLM highlight windows、正文窗口裁剪策略。
 9. `narration_evidence.py`：把 typed highlights 重新聚合成旧成熟解说器需要的 rich `scene_evidence`，保留剧情功能、局部理解、代表帧、人物/对白、raw voice 和校验信息。
-10. `narration_runtime.py`：正式生产解说运行时，统一 `disabled` / `fallback` / `hybrid` / `full` / `batch` 模式，并调用现有成熟 `generate_narration_script_clean`。
+10. `narration_runtime.py`：正式生产解说运行时，统一 `disabled` / `fallback` / `hybrid` / `full` / `batch` 模式，并调用现有成熟 `generate_narration_script`。
 11. `narration_finalize.py`：Stage-H 收口层。将原 Stage F/G 的抽样生成/抽样校验升级为正式脚本最终门禁：归一化、按高光过滤、语义窗锁定、grounding 检查和安全修复元数据。
 
 当前架构原则：

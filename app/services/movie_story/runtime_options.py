@@ -22,7 +22,7 @@ from app.services.movie_story.audit_runtime import (
 )
 
 try:
-    from app.services.llm_config import get_text_llm_config
+    from app.services.llm.runtime_config import get_text_llm_config
 except Exception:  # lightweight unit-test stubs may not initialize full config/logger
     def get_text_llm_config() -> Dict[str, str]:
         return {"api_key": "", "base_url": "", "model": ""}

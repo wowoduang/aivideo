@@ -336,6 +336,11 @@ def audit_stage(stage: str, items: List[Dict[str, Any]], video_path: str = "", o
 
 
     # ===== production movie-story audit policy BEGIN =====
+    """审计单个时间轴阶段的闭环状态。
+    
+    该函数属于长视频拆短视频/时间轴确定性能力审查对象；
+    它只检查阶段输入输出和证据闭合，不应承担旧 native/legacy 主流程调度。
+    """
     try:
         from pathlib import Path as _AuditPath
         from app.services.movie_story.audit_policy import should_skip_stage as _ms_should_skip_stage, should_export_clips as _ms_should_export_clips
@@ -1345,6 +1350,11 @@ def text_between(units: List[Dict[str, Any]], s: float, e: float) -> str:
 
 
 def build_shots(segments, video_path: str, output_path: str, visual_mode: str = "auto"):
+    """基于视频/场景信息构造镜头级时间轴。
+    
+    这是可迁移的确定性视觉时间轴 helper；生产者是视频和切分信号，
+    消费者是 scene/timeline/highlight 候选逻辑。
+    """
     units = subtitle_units(segments)
     if not units:
         return [], {"subtitle_units": 0}
@@ -1752,6 +1762,10 @@ def guess_plot(text: str) -> str:
 
 
 def score_item(item: Dict[str, Any]):
+    """给单个候选条目计算时间轴/故事相关分数。
+    
+    该 helper 只做确定性评分，不调用 LLM，也不解释剧情主题。
+    """
     text = item_text(item)
     s, e = start_end(item)
     duration = max(0.0, e - s)
@@ -1825,6 +1839,10 @@ def score_item(item: Dict[str, Any]):
 # =========================
 
 def build_authoritative_plot_chunks(segments, *args, **kwargs):
+    """构造权威剧情片段窗口，作为时间轴和候选召回的基础材料。
+    
+    该函数应保持确定性，输出给 highlight/timeline 消费，不负责生成正式文案。
+    """
     global _LAST_VIDEO_PATH, _LAST_OUTPUT_PATH
 
     video_path = kwargs.get("video_path") or resolve_video_path(kwargs)
@@ -1892,6 +1910,11 @@ def build_authoritative_plot_chunks(segments, *args, **kwargs):
 
 
 def select_story_highlights(scene_evidence, segments=None, video_path="", output_script_path="", target_minutes=8, highlight_selectivity="balanced"):
+    """从故事/时间轴证据中选择候选高光片段。
+    
+    这里的高光候选服务长视频拆短视频和剪辑组合，不等同于最终文案片段；
+    后续拆分时应保留纯评分、去重和覆盖 helper。
+    """
     video_path = video_path or _LAST_VIDEO_PATH or resolve_video_path({})
     output_script_path = output_script_path or _LAST_OUTPUT_PATH or resolve_output_path({})
     mode = selectivity(highlight_selectivity)

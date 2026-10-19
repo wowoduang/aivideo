@@ -182,6 +182,11 @@ def _build_composition_plan(
     prefer_raw_audio: bool,
     narration_matches: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
+    """构造短视频剪辑合成计划。
+    
+    该函数连接候选片段、镜头时长、字幕/音频材料和导出计划；
+    后续应拆成素材收集、镜头分配、时长规划和输出 schema 组装。
+    """
     segments: List[Dict[str, Any]] = []
     cursor = 0.0
     if mode == "narrated_highlight_edit" and narration_matches:
@@ -360,6 +365,10 @@ def _build_composition_plan(
     }
 
 def _plan_group_shot_durations(match: Dict[str, Any], clip_group: List[Dict[str, Any]]) -> List[float]:
+    """规划一组候选片段内部镜头时长。
+    
+    该 helper 只做剪辑节奏和时长分配，不改变上游候选语义。
+    """
     if not clip_group:
         return []
 

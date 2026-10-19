@@ -89,7 +89,7 @@ disabled
 - `app/services/movie_story/story_runtime.py`
 - `app/services/subtitle_first_pipeline.py`
 - `tools/verify_movie_story_migration_stage.py`
-- `tests/test_movie_story_stage_a_runtime_audit.py`
+- `tests/test_movie_story_runtime_audit_contract.py`
 
 ## 验证结果
 
@@ -98,10 +98,10 @@ disabled
 ```bash
 python -m compileall -q app/services app/api tools
 pytest -q \
-  tests/test_movie_story_stage_a_runtime_audit.py \
-  tests/test_movie_story_migration_stage_a.py \
-  tests/test_generate_narration_script_clean.py \
-  tests/test_plot_understanding_clean.py
+  tests/test_movie_story_runtime_audit_contract.py \
+  tests/test_movie_story_architecture_contract_a.py \
+  tests/test_generate_narration_script.py \
+  tests/test_plot_understanding.py
 ```
 
 结果：

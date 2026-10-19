@@ -314,8 +314,8 @@ def _resolve_options(options: Optional[Mapping[str, Any]] = None) -> JsonDict:
 def _resolve_generator() -> tuple[Any, str]:
     errors: List[str] = []
     candidates = (
-        ("app.services.generate_narration_script_clean", "generate_narration_from_scene_evidence"),
-        ("app.services.generate_narration_script_clean", "generate_narration_script_from_scene_evidence"),
+        ("app.services.generate_narration_script", "generate_narration_from_scene_evidence"),
+        ("app.services.generate_narration_script", "generate_narration_script_from_scene_evidence"),
         ("app.services.generate_narration_script", "generate_narration_from_scene_evidence"),
         ("app.services.generate_narration_script", "generate_narration_script_from_scene_evidence"),
     )

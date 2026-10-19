@@ -5,7 +5,7 @@
 ## 修复点
 
 1. **新增反复述质量门禁**
-   - `generate_narration_script_clean.py` 增加 `_is_verbatim_like()`。
+   - `generate_narration_script.py` 增加 `_is_verbatim_like()`。
    - 检测 narration 是否连续照抄字幕、是否大段重合、是否把字幕原文当解说。
    - 生成后、review 后、最终 script item 构建前都会检查。
 
@@ -19,7 +19,7 @@
    - 现在 fallback 使用 `_local_commentary_narration()`，输出“剧情功能/人物处境/矛盾推进”类型解说。
 
 4. **局部理解的无 LLM heuristic 不再把字幕原文写回理解字段**
-   - `plot_understanding_clean._heuristic_local_understanding()` 改为生成保守剧情解释。
+   - `plot_understanding._heuristic_local_understanding()` 改为生成保守剧情解释。
    - 例如“催征税银/遍地饥民”会被解释成“皇权压力和民间困境正面冲突”，而不是照抄台词。
 
 5. **提高中文解说字数预算**
@@ -58,8 +58,8 @@
 
 ```bash
 pytest -q tests/test_narration_quality_anti_recitation.py \
-          tests/test_generate_narration_script_clean.py \
-          tests/test_plot_understanding_clean.py \
+          tests/test_generate_narration_script.py \
+          tests/test_plot_understanding.py \
           tests/test_movie_story_flow_debug_fix.py
 # 12 passed
 ```

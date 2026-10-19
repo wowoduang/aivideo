@@ -862,6 +862,29 @@ def _combine_video_segments(task_id: str, params: VideoClipParams, new_script_li
     return combined_video_path
 
 
+_CANONICAL_VIDEO_SUBTITLE_FONT = "C:/Windows/Fonts/simhei.ttf"
+_LEGACY_VIDEO_SUBTITLE_FONT_ALIASES = {
+    "SimHei": _CANONICAL_VIDEO_SUBTITLE_FONT,
+}
+
+
+def _canonicalize_video_font_name(font_name: object) -> str:
+    """Return the canonical subtitle font contract used by video jobs.
+
+    Historical UI/build artifacts may still submit ``SimHei`` even after the
+    schema default was changed. The video pipeline contract now expects a real
+    font file path. This function migrates only the exact historical default
+    alias and blank values to the canonical Windows font path. Other values are
+    left unchanged and are still validated by generate_video.
+    """
+    font_text = "" if font_name is None else str(font_name).strip()
+    if not font_text:
+        return _CANONICAL_VIDEO_SUBTITLE_FONT
+
+    return _LEGACY_VIDEO_SUBTITLE_FONT_ALIASES.get(font_text, font_text)
+
+
+
 def _final_merge(task_id: str, params: VideoClipParams, combined_video_path: str, list_script, *, audio_path: str = "", subtitle_path: str = ""):
     output_video_path = path.join(utils.task_dir(task_id), "combined.mp4")
     bgm_path = utils.get_bgm_file()
@@ -891,7 +914,7 @@ def _final_merge(task_id: str, params: VideoClipParams, combined_video_path: str
         "original_audio_volume": final_original_volume,
         "keep_original_audio": has_original_audio_segments,
         "subtitle_enabled": params.subtitle_enabled,
-        "subtitle_font": params.font_name,
+        "subtitle_font": _canonicalize_video_font_name(params.font_name),
         "subtitle_font_size": params.font_size,
         "subtitle_color": params.text_fore_color,
         "subtitle_bg_color": None,
@@ -930,10 +953,13 @@ def _run_pipeline(task_id: str, params: VideoClipParams):
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=20)
     logger.info("\n\n## 3. 统一视频裁剪（基于OST类型）")
     list_script = _allocate_video_windows_from_tts(list_script, locals().get('tts_results') or locals().get('audio_results') or locals().get('tts_result') or locals().get('tts_tasks'))
+    video_clip_output_dir = utils.task_dir(os.path.join(task_id, "clip_video_unified"))
     video_clip_result = clip_video.clip_video_unified(
         video_origin_path=params.video_origin_path,
         script_list=list_script,
         tts_results=tts_results,
+        output_dir=video_clip_output_dir,
+        task_id=task_id,
     )
     tts_clip_result = {tts_result["_id"]: tts_result["audio_file"] for tts_result in tts_results}
     subclip_clip_result = {tts_result["_id"]: tts_result["subtitle_file"] for tts_result in tts_results}

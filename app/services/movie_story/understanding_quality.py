@@ -489,7 +489,7 @@ def resolve_stage_d_llm_config(
     """
     cfg: JsonDict = {}
     try:
-        from app.services.llm_config import get_text_llm_config
+        from app.services.llm.runtime_config import get_text_llm_config
         raw_cfg = get_text_llm_config() or {}
         if isinstance(raw_cfg, Mapping):
             cfg = dict(raw_cfg)
@@ -582,7 +582,7 @@ def maybe_run_live_understanding_samples(
     samples so the migration can compare real old-logic understanding quality.
     """
     try:
-        from app.services.llm_config import get_text_llm_config
+        from app.services.llm.runtime_config import get_text_llm_config
         from app.services.llm_text_completion import call_text_chat_completion
     except Exception:
         get_text_llm_config = None  # type: ignore
