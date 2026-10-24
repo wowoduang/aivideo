@@ -1,7 +1,8 @@
 # aivideo 代码规范
 
 > 基于 aivideo 实际代码库提炼，面向 ChatGPT/Cursor 等 AI 辅助编码场景。  
-> 每条规则附有 **真实反例**（来自代码库中已发现的问题）和 **正例**。
+> 重点聚焦：可维护性、AI 可追溯性、任务边界清晰、避免 fake fallback / 历史债积累。  
+> 所有规则必须在 AI 写代码前先阅读，必要时按任务类型适当放宽，但不能放宽“主流程唯一性”和“失败直接报错”的核心要求。
 
 ---
 
@@ -15,8 +16,11 @@
 - 文件头必须有 # -*- coding: utf-8 -*- 和 from __future__ import annotations
 - 日志只用 loguru logger，禁止 print，禁止 logging 模块
 - 所有函数必须有完整类型注解（参数 + 返回值）
-- 单文件不超过 600 行，单函数不超过 80 行
-- 新模块必须在 tests/ 对应目录有配套测试
+- 纯函数 ≤ 60 行；编排函数 ≤ 150 行；流水线入口 ≤ 200 行
+- 业务文件 ≤ 800 行；提示词/常量表 ≤ 1200 行；测试文件 ≤ 1000 行
+- 存量超限文件冻结，禁止继续追加业务逻辑；新逻辑写到新文件中
+- AI 任务必须明确区分事实理解 / 节拍设计 / 最终定稿三段式边界
+- 失败必须直接 raise，禁止 fallback / silent downgrade
 - 不允许同名函数在同一文件中重复定义
 - 不允许用 _ORIGINAL_XXX = xxx 这种别名变通；需要扩展函数就直接改函数签名
 ```
@@ -121,18 +125,27 @@ items = _generate_raw_srt_narration_items(
 )
 ```
 
-### 3.3 函数长度
+### 3.3 函数长度与职责边界
 
-- **单函数不超过 80 行**（不含注释和空行）
-- 超过 80 行必须拆分为若干私有辅助函数
-- 最大不得超过 120 行（已是极限，需在 PR 说明原因）
+按职责区分，不要用单一“80 行硬上限”卡死所有函数。推荐规则：
 
-**反例（来自代码库）：**
-```
-voice.py: get_all_azure_voices()   1000 行  ← 禁止
-generate_video.py: merge_materials()  354 行  ← 禁止
-story_runtime.py: extract_highlights() 332 行  ← 禁止
-```
+- **纯函数** ≤ 60 行
+- **编排函数** ≤ 150 行
+- **流水线入口** ≤ 200 行
+- **业务文件** ≤ 800 行
+- **提示词和常量表** ≤ 1200 行
+- **测试文件** ≤ 1000 行
+
+**行数按物理行计算，含空行和注释。**
+
+**判断标准不是“看上去写了多少行”，而是看“这段代码是否只做了一层职责”：**
+- 纯函数负责判断、提取、归一、转换、校验
+- 编排函数负责顺序、路由、模型调用、组装结果
+- 流水线入口负责一条主流程入口，不能把一大串业务逻辑塞进一个函数里
+
+**例外：**
+- 纯数据/常量表文件可允许长一些，但不允许混业务分支；如果内容里出现大量 if/else 分支，就必须拆
+- 存量超大文件（>800 行）冻结，禁止追加业务逻辑，新逻辑写到新文件，旧文件只留调用
 
 ### 3.4 禁止同名函数重复定义
 
@@ -162,29 +175,102 @@ def generate_narration_from_scene_evidence(
     model: str,
     style: str = "documentary",
     video_title: str = "",
-    raw_subtitle_text: str = "",       # 新增
-    raw_subtitle_path: str = "",       # 新增
-    raw_subtitle_segments: List[Dict] | None = None,  # 新增
+    raw_subtitle_text: str = "",
+    raw_subtitle_path: str = "",
+    raw_subtitle_segments: List[Dict] | None = None,
     **kwargs,
 ) -> List[Dict]:
     normalized_style = style if style in STYLE_GUIDE else "default"
 
-    # raw_srt 优先路由
     if normalized_style in _FAST_CUT_STYLES:
         raw_srt = raw_subtitle_text or _raw_srt_read_file(raw_subtitle_path)
         if raw_srt and api_key and model:
             return _generate_raw_srt_narration_items(
                 scene_evidence or [],
                 raw_srt_text=raw_srt,
-                api_key=api_key, base_url=base_url,
-                model=model, style=normalized_style,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                style=normalized_style,
             )
     # 原有逻辑继续 ...
 ```
 
 ---
 
-## 4. 命名规范
+## 4. AI 任务分三轮边界（强制）
+
+对于 movie_story / two_round_visual / 视频解说类任务，AI 代码和任务流程必须遵守这一条边界：
+
+### 第 1 轮：事实理解 / Event Grounding
+
+**任务目标：** 建立正确事件表，不写最终文案。
+
+输入：
+- 稀疏抽帧
+- 重点抽帧
+- 字幕事件表
+- 多模态理解结果
+
+输出：
+- 时间
+- 谁
+- 对谁
+- 做了什么
+- 结果
+- 是否误认 / 误解 / 改认错的人
+
+约束：
+- 只能修事实，不允许直接写最终解说稿
+- 不能在这一轮做节拍设计
+
+### 第 2 轮：节拍设计 / Beat Planning
+
+**任务目标：** 建立真正的讲述结构，决定怎么讲、讲到哪里。 
+
+输入：
+- 事件表
+- 视频时间线
+- 文案风格要求
+
+输出：
+- 8–12 个节拍
+- 每拍 2 个候选窗口
+- 标注钩子、悬念、删拍、二选一
+
+约束：
+- 只能修节拍和窗口，不允许直接输出成稿
+- 不能重新写事件表
+
+### 第 3 轮：定稿 / Narration Lock
+
+**任务目标：** 让一条主线最终落成文案，并做小规模核对。 
+
+输入：
+- 节拍与窗口
+- 指定风格
+- 预计字数
+
+输出：
+- 每窗一句剧情句
+- 成稿 + 事件表 + 字幕要点
+
+约束：
+- 只修「核对点名」的句子，不允许整段重写
+- 核对可以很短，最好单独一次
+- 不能再回到第 2 轮重设计节拍
+
+### 这三轮的意义
+
+- 第 1 轮解决“事实是否正确”
+- 第 2 轮解决“结构是否合理”
+- 第 3 轮解决“语言是否稳定并可发布”
+
+这是 AI 视频解说项目最关键的工程边界。凡是“第 2 轮又回到理解”或“第 3 轮又重排节拍”的任务，都属于设计不完整，需要调整。
+
+---
+
+## 5. 命名规范
 
 | 类型 | 规范 | 示例 |
 |------|------|------|
@@ -200,7 +286,7 @@ def generate_narration_from_scene_evidence(
 
 ---
 
-## 5. 日志规范
+## 6. 日志规范
 
 **项目统一使用 loguru，禁止 print 和 logging 模块。**
 
@@ -227,7 +313,7 @@ logger.info(f"style={style}")  # 用了 f-string，失去延迟格式化
 
 ---
 
-## 6. 错误处理
+## 7. 错误处理
 
 ```python
 # ✅ 正确：捕获具体异常，记录上下文，决定是否重新抛出
@@ -242,7 +328,7 @@ except Exception as exc:
     logger.exception("历史剧解说生成意外失败: {}", exc)
     raise  # 不吞异常，让上层处理
 
-# ❌ 禁止：裸 except 吞掉所有异常（代码库中有 280 处此类问题）
+# ❌ 禁止：裸 except 吞掉所有异常
 try:
     result = do_something()
 except Exception:
@@ -251,18 +337,21 @@ except Exception:
 
 回退逻辑必须用 `logger.warning` 记录，说明为何走了降级路径。
 
+**重要：** 本项目主线禁止 fallback、静默降级、吞异常。多模态链路失败必须直接 raise。
+
 ---
 
-## 7. 文件与模块规范
+## 8. 文件与模块规范
 
-### 7.1 单文件行数
+### 8.1 单文件行数
 
 | 情况 | 处理方式 |
 |------|----------|
 | ≤ 400 行 | 正常 |
 | 400~600 行 | 评估是否可以拆分 |
-| > 600 行 | 必须拆分，PR 不得合并 |
+| 600~800 行 | 允许，但要说明职责边界；优先拆 |
 | > 800 行 | 存量问题，新代码不允许继续往里追加 |
+| > 1200 行 | 纯常量/提示词表允许，但不能混业务逻辑 |
 
 **存量超大文件（待拆分）：**
 ```
@@ -271,7 +360,7 @@ voice.py                            2134 行 → 拆出 azure_voices.py
 timeline_runtime.py                 1928 行 → 按算法阶段拆子模块
 ```
 
-### 7.2 一个文件只做一件事
+### 8.2 一个文件只做一件事
 
 判断标准：能用一句话说清楚这个文件做什么，不需要"和"字。
 
@@ -281,15 +370,15 @@ timeline_runtime.py                 1928 行 → 按算法阶段拆子模块
 ❌ generate_narration_script.py  — 标准解说生成 + 历史剧链路 + raw_srt 链路（三件事）
 ```
 
-### 7.3 禁止往已超大的文件里追加代码
+### 8.3 禁止往已超大的文件里追加代码
 
-如果目标文件 > 600 行，必须先拆出子模块，再在子模块里写新代码。
+如果目标文件 > 800 行，必须先拆出子模块，再在子模块里写新代码。
 
 ---
 
-## 8. LLM 调用规范
+## 9. LLM 调用规范
 
-### 8.1 统一走 `_call_chat_completion`
+### 9.1 统一走 `_call_chat_completion`
 
 所有 LLM 调用必须通过项目封装的 `_call_chat_completion`，禁止直接调用 `openai.chat.completions.create` 或 `litellm.completion`。
 
@@ -300,7 +389,7 @@ raw = _call_chat_completion(
     api_key=api_key,
     base_url=base_url,
     model=model,
-    timeout=180,  # 长任务显式设置超时
+    timeout=180,
 )
 
 # ❌ 禁止：绕过封装
@@ -308,7 +397,7 @@ import openai
 resp = openai.chat.completions.create(model=model, messages=[...])
 ```
 
-### 8.2 Prompt 管理
+### 9.2 Prompt 管理
 
 **超过 5 行的 Prompt 必须定义为模块级常量，禁止内联在函数体里。**
 
@@ -330,11 +419,11 @@ def _build_raw_srt_prompt(srt_text: str, style: str) -> str:
         srt_text=srt_text,
     )
 
-# ❌ 禁止：Prompt 内联（来自代码库真实反例，130字符单行）
-prompt = f"你正在修复影视解说文案...原字幕：{source}...只返回 JSON：{{\"narration\":\"改好的解说词\"}}"
+# ❌ 禁止：Prompt 内联（来自代码库真实反例）
+prompt = f"你正在修复影视解说文案...原字幕：{source}..."
 ```
 
-### 8.3 LLM 输出解析必须有容错
+### 9.3 LLM 输出解析必须有容错
 
 ```python
 # ✅ 正确
@@ -343,14 +432,14 @@ if not rows:
     raise ValueError(f"大模型未返回可解析的时间轴，原始输出前200字：{raw_text[:200]}")
 
 # ❌ 禁止：直接 json.loads 不处理异常
-result = json.loads(raw_text)  # 大模型输出不稳定，必须加 try-except
+result = json.loads(raw_text)
 ```
 
 ---
 
-## 9. 测试规范
+## 10. 测试规范
 
-### 9.1 测试文件位置
+### 10.1 测试文件位置
 
 ```
 ✅ tests/test_generate_narration_script.py
@@ -358,47 +447,16 @@ result = json.loads(raw_text)  # 大模型输出不稳定，必须加 try-except
 ❌ app/services/llm/test_llm_service.py  （生产代码目录里放测试）
 ```
 
-### 9.2 新功能必须配套测试
+### 10.2 新功能必须配套测试
 
 **AI 写新链路代码时，必须同时输出对应的测试用例，不允许只输出实现代码。**
 
 测试最低覆盖：
-1. **正常路径**：标准输入 → 预期输出
-2. **空输入/边界值**：空列表、空字符串、None → 不崩溃
-3. **路由分支**：如果有 `if A: 走路径1 else: 走路径2`，两条路各一个测试
+1. 正常路径：标准输入 → 预期输出
+2. 空输入/边界值：空列表、空字符串、None → 不崩溃
+3. 路由分支：if A: 走路径1 else: 走路径2；两条路径各一个测试
 
-```python
-# 示例：raw_srt 链路最小测试集
-class TestRawSrtNarration(unittest.TestCase):
-
-    def test_extract_rows_standard_timecode(self):
-        """标准 [MM:SS ~ MM:SS] 格式可正确解析"""
-        raw = "**开场**\n[00:30 ~ 01:10]\n开场文案。"
-        rows = narration_clean._raw_srt_extract_rows(raw)
-        self.assertEqual(len(rows), 1)
-        self.assertAlmostEqual(rows[0]["start"], 30.0)
-
-    def test_extract_rows_empty_input_returns_empty(self):
-        """无时间码时返回空列表，不崩溃"""
-        rows = narration_clean._raw_srt_extract_rows("没有时间码的文本")
-        self.assertEqual(rows, [])
-
-    def test_route_with_raw_subtitle_path_calls_raw_srt_chain(self):
-        """传 raw_subtitle_path 时路由到 raw_srt 链路"""
-        with unittest.mock.patch(
-            "app.services.generate_narration_script._generate_raw_srt_narration_items"
-        ) as mock:
-            mock.return_value = [{"start": 30, "end": 70, "narration": "测试"}]
-            narration_clean.generate_narration_from_scene_evidence(
-                scene_evidence=[],
-                api_key="sk-test", base_url="", model="test-model",
-                style="historical_drama",
-                raw_subtitle_text="1\n00:00:30,000 --> 00:01:10,000\n测试字幕",
-            )
-            mock.assert_called_once()
-```
-
-### 9.3 禁止只测 happy path
+### 10.3 禁止只测 happy path
 
 ```python
 # ❌ 仅测成功路径，没有异常测试
@@ -409,7 +467,7 @@ def test_generate_narration(self):
 
 ---
 
-## 10. 配置与敏感信息
+## 11. 配置与敏感信息
 
 **API Key 和密钥绝对不允许出现在任何代码文件中。**
 
@@ -436,7 +494,7 @@ api_key = cfg.vision_litellm_api_key
 
 ---
 
-## 11. 换行符与编码
+## 12. 换行符与编码
 
 项目统一 **LF（Unix）换行符**。在仓库根目录创建 `.gitattributes`：
 
@@ -458,7 +516,7 @@ git add --renormalize .
 
 ---
 
-## 12. AI 辅助编码 Checklist
+## 13. AI 辅助编码 Checklist
 
 让 ChatGPT/Cursor 写完代码后，对照以下清单验收，有任何一项不通过就打回重写：
 
@@ -469,15 +527,17 @@ git add --renormalize .
 - [ ] 没有裸 `except:` 或 `except Exception: pass`
 - [ ] 没有在同一文件中重复定义同名函数
 - [ ] 没有把 API Key 写死在代码里
-- [ ] 单函数不超过 80 行
+- [ ] 纯函数 ≤ 60 行，编排函数 ≤ 150 行，入口函数 ≤ 200 行
 - [ ] 新增的生产代码有配套测试，测试覆盖正常路径 + 空输入 + 路由分支
 - [ ] 测试文件在 `tests/` 目录，不在 `app/` 内
 - [ ] 换行符是 LF（用 `file xxx.py` 命令检查，不能出现 CRLF）
 - [ ] Prompt 模板超过 5 行的定义为模块级常量，不内联在函数体里
+- [ ] 任务边界是否清晰：事实理解 / 节拍设计 / 定稿核对 分层明确
+- [ ] 若是主流程改动，是否已确认没有引入 fallback / silent downgrade
 
 ---
 
-## 13. 代码可追溯性（Code Traceability）
+## 14. 代码可追溯性（Code Traceability）
 
 > **核心目标**：让 AI 工具（ChatGPT/Cursor/Copilot）拿到任意一个文件，
 > 无需深度分析整个代码库，就能立即理解：
@@ -486,14 +546,9 @@ git add --renormalize .
 > 3. **历史上做过什么决策**、为什么这么选择
 > 4. **接下来该做什么**、边界在哪里
 >
-> 涉及术语：**Context Engineering**（AI 上下文工程）、
-> **ADR（Architecture Decision Records）**（架构决策记录）、
-> **Code Provenance**（代码来源溯源）、
-> **Intent Documentation**（意图文档化）。
+> 涉及术语：**Context Engineering**（AI 上下文工程）、**ADR**（Architecture Decision Records）、**Code Provenance**（代码来源溯源）、**Intent Documentation**（意图文档化）。
 
----
-
-### 13.1 模块级 `__CONTEXT__` 块（AI 入口点）
+### 14.1 模块级 `__CONTEXT__` 块（AI 入口点）
 
 每个模块在文件头 docstring 之后，import 之前，写一个 `__CONTEXT__` 字典。
 AI 工具读取这个文件的前 40 行，就能获得完整上下文，无需分析函数体。
@@ -511,52 +566,37 @@ generate_narration_script.py
 """
 
 __CONTEXT__ = {
-    # ── 定位 ──────────────────────────────────────────────────────────────
-    "layer": "service",                          # api / service / model / util
-    "domain": "movie_story.narration",           # 业务域
-    "entry_points": [                            # 外部调用此模块的唯一入口
+    "layer": "service",
+    "domain": "movie_story.narration",
+    "entry_points": [
         "generate_narration_from_scene_evidence",
         "generate_narration",
     ],
-    "called_by": [                               # 谁调用了这个模块
+    "called_by": [
         "movie_story/narration_runtime.py",
         "movie_story/direct_cut_runtime.py",
     ],
-    # ── 历史决策（ADR 简版）─────────────────────────────────────────────
     "decisions": [
-        "2026-04: raw_srt 链路合并进主函数签名（新增 raw_subtitle_text/path 参数），"
-        "废弃了之前用 _ORIGINAL_* 别名+重复定义的 dispatcher 模式，见 docs/FIX_REPORT.md",
-        "2026-03: _raw_srt_* 命名族（20个函数）内联在本文件，"
-        "计划迁移到 movie_story/raw_srt_narration.py，尚未执行",
+        "2026-04: raw_srt 链路合并进主函数签名，废弃重复定义 dispatcher 模式",
+        "2026-03: 双轮解说链路保留，禁止恢复 legacy / native fallback", 
     ],
-    # ── 待完成任务（TODO for AI）─────────────────────────────────────────
     "pending": [
-        "将 _raw_srt_* 函数族（L2077~L2530）提取到 movie_story/raw_srt_narration.py",
-        "文件行数超标（2780行），拆分后主文件应降至 ~800 行",
+        "将 _raw_srt_* 函数族提取到 movie_story/raw_srt_narration.py",
+        "主文件降至 ≤ 800 行",
     ],
-    # ── 禁止行为（AI 必须遵守）───────────────────────────────────────────
     "ai_constraints": [
-        "禁止在本文件继续追加新函数，超过 600 行的文件不得新增代码",
+        "禁止继续追加新函数到超大文件",
         "禁止重复定义 generate_narration_from_scene_evidence",
-        "新增链路必须先在 tests/ 写测试再写实现",
+        "新增链路必须先写测试再写实现",
     ],
 }
 ```
 
-**AI 使用方式：** 每次对话开头附上：
-```
-请先读取目标文件的 __CONTEXT__ 字典，按照其中的 pending 执行任务，
-遵守 ai_constraints，并在完成后更新 decisions 追加本次变更记录。
-```
-
 ---
 
-### 13.2 函数级意图注释（Intent Comment）
+### 14.2 函数级意图注释（Intent Comment）
 
 普通 docstring 说"是什么"，**意图注释说"为什么"和"不能做什么"**。
-
-AI 最容易犯的错误是"看到问题就修"，在不理解历史决策的情况下把绕过某个 bug
-的代码"优化"掉。意图注释明确告诉 AI：这段看起来奇怪的代码有它存在的理由。
 
 ```python
 def _generate_raw_srt_narration_items(
@@ -572,17 +612,13 @@ def _generate_raw_srt_narration_items(
     原始 SRT → 双轮解说链路（历史正剧专用）。
 
     意图：
-        历史正剧（historical_drama）字幕密度高、台词文言化，
-        标准批量生成链路会产生大量语义割裂。
-        此链路先用第一轮 LLM 做结构分析，第二轮再写文案，
-        效果比单轮批量生成高约 40%（2026-03 AB 测试结论）。
+        历史正剧字幕密度高，单轮生成容易语义割裂。
+        此链路先用第一轮 LLM 做结构分析，再写文案。
 
     注意（AI 不得修改以下行为）：
         - row["start"] 和 row["end"] 单位是秒（float），不是帧号
-        - _raw_srt_build_items 返回的 items 时间已经过扩展验证（≥60秒），
-          调用方不得再次裁剪
-        - 本函数只在 style in _FAST_CUT_STYLES 时被调用，
-          调用前的路由判断在 generate_narration_from_scene_evidence 里
+        - 本函数只在 style in _FAST_CUT_STYLES 时被调用
+        - 不允许在这里做 silent fallback
 
     调用方：
         generate_narration_from_scene_evidence（raw_srt 分支）
@@ -591,7 +627,7 @@ def _generate_raw_srt_narration_items(
 
 ---
 
-### 13.3 架构决策记录（ADR）
+### 14.3 架构决策记录（ADR）
 
 **每次做了影响全局的决策，必须在 `docs/decisions/` 写一条 ADR。**
 
@@ -599,55 +635,11 @@ AI 工具在修改相关模块时，先被告知去读对应 ADR，避免推翻�
 
 文件命名：`docs/decisions/ADR-{编号}-{主题}.md`
 
-```
-docs/decisions/
-├── ADR-001-llm-unified-via-litellm.md
-├── ADR-002-raw-srt-two-round-narration.md
-├── ADR-003-movie-story-nine-stage-pipeline.md
-└── ADR-004-task-function-naming-no-version-suffix.md
-```
-
-**ADR 模板（最小版本）：**
-
-```markdown
-# ADR-002: 历史正剧原始 SRT 双轮解说链路
-
-**日期**：2026-03-15
-**状态**：已实施（Active）
-**影响文件**：
-- app/services/generate_narration_script.py
-- app/services/movie_story/two_round_narration.py
-
-## 背景
-
-历史正剧字幕密度高（平均 6 字/秒），台词文言化，
-标准单轮批量生成链路产生大量语义割裂，用户反馈解说"读不通"。
-
-## 决策
-
-新增双轮解说路由：
-- 第一轮：结构分析（ANALYSIS_PROMPT_TEMPLATE），提取故事段落和关键小戏
-- 第二轮：文案写作（WRITER_PROMPT_TEMPLATE），基于分析结果生成解说
-
-触发条件：`style in _FAST_CUT_STYLES and raw_srt_text`
-
-## 结果
-
-AB 测试（2026-03 样本 200 条）：用户满意度 +38%，解说连贯性评分 4.2→4.7。
-
-## 注意（AI 不得推翻）
-
-双轮调用会消耗约 2× token，这是**已知且接受的成本**。
-不要试图合并为单轮提示以"节省 token"，会破坏生成质量。
-```
-
 ---
 
-### 13.4 变更日志注释（Change Provenance）
+### 14.4 变更日志注释（Change Provenance）
 
 **在修改已有函数时，在修改处附近加变更注释，说明为什么改、改了什么。**
-
-这是给下一个接手的人（或 AI）看的，比 git blame 更直接。
 
 ```python
 def generate_narration_from_scene_evidence(
@@ -659,7 +651,7 @@ def generate_narration_from_scene_evidence(
     video_title: str = "",
     # [2026-04 修改] 新增三个参数以支持 raw_srt 链路，
     # 替代之前用 _ORIGINAL_* 别名 + 函数重复定义的 dispatcher 模式。
-    # 调用方（direct_cut_runtime.py）无需修改，新参数有默认值。
+    # 调用方无需修改，新参数有默认值。
     raw_subtitle_text: str = "",
     raw_subtitle_path: str = "",
     raw_subtitle_segments: List[Dict] | None = None,
@@ -673,29 +665,13 @@ def generate_narration_from_scene_evidence(
 # [YYYY-MM 操作] 说明。原因/背景。（可选：见 docs/decisions/ADR-XXX.md）
 ```
 
-变更注释写在**被修改的代码旁边**，不写在文件顶部（顶部是模块级说明）。
-
 ---
 
-### 13.5 Pipeline 阶段标注
+### 14.5 Pipeline 阶段标注
 
-本项目 movie_story 流水线有 9 个阶段（01~09），
-**每个阶段函数必须在 docstring 里标注自己的阶段编号和上下游关系**，
-AI 才能在不读完整 pipeline.py 的情况下理解调用链。
+本项目 movie_story 流水线有多个阶段，**每个阶段函数必须在 docstring 里标注自己的阶段编号和上下游关系**。
 
 ```python
-# ── 本项目实际阶段定义 ────────────────────────────────────────────────────
-# 01_scene_candidates       build_segmentation_candidates()
-# 02_draft_story_candidates （内部，由 stage1 生成）
-# 03_evidence_segments      enrich_candidates_with_evidence()
-# 04_split_merge_suggestions（内部）
-# 05_selected_highlights    select_highlights_with_report()
-# 06_rejected_candidates    （内部）
-# 07_human_narration_director build_human_narration_package()
-# 08_humanized_script_items  （内部，由 stage7 生成）
-# 09_subtitle_design_cues   design_subtitle_cues()
-# ──────────────────────────────────────────────────────────────────────────
-
 def enrich_candidates_with_evidence(
     candidates: List[SceneCandidate],
     *,
@@ -716,70 +692,39 @@ def enrich_candidates_with_evidence(
 
 ---
 
-### 13.6 `PENDING.md`：项目级待办（给 AI 的任务队列）
+### 14.6 `PENDING.md`：项目级待办（给 AI 的任务队列）
 
 在项目根目录维护一个 `PENDING.md`，记录所有已知的待完成任务。
 每次让 AI 开始新任务前，把 `PENDING.md` 的相关条目粘贴进 prompt。
 
-```markdown
-# PENDING.md — aivideo 待完成任务
+---
 
-## 🔴 高优先级
+## 15. 最终结论：AI 代码不是“写顺手”，而是“收口任务的工程行为”
 
-### [PEND-001] 拆分 generate_narration_script.py
-- 文件现状：2780 行，3 条链路混合
-- 目标：提取 _raw_srt_* 函数族（约 450 行）到 movie_story/raw_srt_narration.py
-- 前置条件：raw_srt 链路测试覆盖率 ≥ 80%（当前 0%）
-- 影响文件：generate_narration_script.py, direct_cut_runtime.py
-- 验收标准：主文件降至 ≤ 800 行，所有现有测试通过
+本项目的目标不是让 AI 自由发挥，而是：
 
-### [PEND-002] 补充 raw_srt 链路测试
-- 目标：tests/test_generate_narration_script.py 新增 TestRawSrtNarration 类
-- 最少覆盖：时间码解析、空输入容错、路由分支选择（共 6 个测试用例）
-- 相关 ADR：ADR-002
+- 先保证事实正确
+- 再保证节奏合理
+- 最后保证成稿稳定
+- 所有这三者都要清晰落在代码和流程里
 
-## 🟡 中优先级
+这也是为什么这次编程规范补充了：
+- 三轮任务边界
+- 事实判断必须早于节拍设计
+- 文案定稿必须在最后
+- 失败必须直接 raise，不允许 fallback
+- 存量超限文件冻结、禁止继续堆业务逻辑
 
-### [PEND-003] voice.py 音色数据外置
-- 文件现状：get_all_azure_voices() 1000 行硬编码音色列表
-- 目标：提取到 resource/azure_voices.json，函数缩减至 10 行
-- 注意：azure_voices.json 格式需与现有返回值结构兼容
-
-### [PEND-004] SDE/ SDP/ 目录重命名
-- 目标：SDE/ → short_drama_explanation/, SDP/ → short_drama_generation/
-- 影响：需批量更新所有 import 路径（约 12 处）
-
-## ✅ 已完成（供溯源）
-
-### [DONE-001] 修复 generate_narration_from_scene_evidence 重复定义
-- 完成日期：2026-05
-- 方案：合并参数，删除 _ORIGINAL_* 别名和 dispatcher，见 docs/FIX_REPORT.md
-
-### [DONE-002] task.py 版本号函数统一
-- 完成日期：2026-05
-- 方案：_v12/_v15/_v161 → 无版本号统一命名，删除重复实现
-```
-
-**给 AI 的 prompt 模板：**
-
-```
-当前任务：[PEND-001] 拆分 generate_narration_script.py
-
-相关上下文：
-- 目标文件 __CONTEXT__: [粘贴文件头的 __CONTEXT__ 字典]
-- 相关 ADR: [粘贴 ADR-002 内容]
-- 验收标准：主文件 ≤ 800 行，所有现有测试通过，新增 TestRawSrtNarration 6 个测试
-
-请在不影响现有功能的前提下执行，完成后：
-1. 更新 generate_narration_script.py 的 __CONTEXT__.decisions
-2. 在 PENDING.md 中将 PEND-001 移到「已完成」并记录方案
-```
+这条规则对 AI 辅助编码尤其关键：
+AI 很容易在错误的边界内继续输出代码，最终只会让项目越来越乱。
+因此，既要保持严谨的工程规范，又必须让 AI 明确知道：
+**它负责什么，它不负责什么。**
 
 ---
 
-### 13.7 AI 可追溯性 Checklist（补充到第 12 章）
+## 16. 代码可追溯性 Checklist（补充）
 
-在第 12 章 Checklist 基础上，每次 AI 写完代码额外检查：
+在第 13 章 Checklist 基础上，每次 AI 写完代码额外检查：
 
 - [ ] 新建文件有 `__CONTEXT__` 字典（layer / domain / entry_points / called_by / decisions / pending / ai_constraints）
 - [ ] 修改已有函数时，在修改处加了 `# [YYYY-MM 操作]` 变更注释
@@ -787,4 +732,15 @@ def enrich_candidates_with_evidence(
 - [ ] 完成 `PENDING.md` 中的任务后，将对应条目移到「已完成」并填写方案摘要
 - [ ] 新的阶段函数标注了 `【阶段 XX / 9】`、上游和下游
 - [ ] `__CONTEXT__.pending` 中记录了本次未完成但已知需要做的后续任务
+- [ ] 本次任务是否清楚区分了：事实理解 / 节拍设计 / 最终定稿三段式边界
+- [ ] 若本次改动涉及主流程，是否确认没有引入 fallback
+
+---
+
+## 17. 结语
+
+aivideo 不是单纯“写代码”，而是把工程、模型、流程、审核和产品闭环有机结合起来。
+这要求代码规范不仅约束语法和风格，更要约束任务边界、AI 行为边界、代码可追溯边界和主链路唯一性。
+
+把这部分规则固化在文档中后，AI 接手协作会明显更稳定，也更有利于后续维护、复盘和演进。
 
