@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import pytest
+
 from app.services.movie_story.narration_contract import validate_stage_result
 from app.services.movie_story.unified_entry import _require_movie_story_inputs, _resolve_movie_story_mode
 
@@ -49,25 +51,20 @@ def test_validate_narration_item_payload():
 
 def test_resolve_mode_rejects_legacy():
     request = {"movie_story_mode": "legacy"}
-    assert _resolve_movie_story_mode(request) == "legacy"
+    with pytest.raises(RuntimeError):
+        _resolve_movie_story_mode(request)
 
 
 def test_requires_video_path_for_movie_story():
     request = {"movie_story_mode": "two_round"}
-    try:
+    with pytest.raises(ValueError, match="movie_story_request_missing_video_path"):
         _require_movie_story_inputs(request)
-        assert False, "should raise"
-    except ValueError as exc:
-        assert "movie_story_request_missing_video_path" in str(exc)
 
 
 def test_requires_visual_focus_for_two_round_visual():
     request = {"movie_story_mode": "two_round_visual", "video_path": "/tmp/video.mp4"}
-    try:
+    with pytest.raises(ValueError, match="movie_story_request_missing_visual_focus_segments"):
         _require_movie_story_inputs(request)
-        assert False, "should raise"
-    except ValueError as exc:
-        assert "movie_story_request_missing_visual_focus_segments" in str(exc)
 
 
 def test_accepts_visual_focus_for_two_round_visual():
