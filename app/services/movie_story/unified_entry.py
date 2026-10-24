@@ -5,6 +5,11 @@ from __future__ import annotations
 unified_entry.py
 
 统一前端编辑入口。负责把前端 movie_story / highlight 请求路由到当前正式主流程。
+
+主线约束：
+- movie_story 仅允许 two_round / two_round_visual
+- native / legacy / subtitle_first_pipeline 不能作为入口也不能作为 fallback
+- highlight 产品链保留独立边界，不与 movie_story 主线混用
 """
 
 __CONTEXT__ = {
@@ -22,14 +27,17 @@ __CONTEXT__ = {
     "decisions": [
         "2026-05: movie_story_script 主流程只允许 two_round / two_round_visual；旧 native/legacy 不再作为主流程或 fallback。",
         "2026-05: highlight_edit 产品链仍通过 run_highlight_edit_engine 路由，和 movie_story_script 主流程分离。",
+        "2026-10: 在统一入口增加强制 mode guard，禁止绕过主线 or 混入 legacy fallback。",
     ],
     "pending": [
         "长视频拆多个短视频产品链稳定后，在此处增加独立显式入口，不能复用旧 native/legacy movie_story。",
         "legacy/native 中仍有价值的确定性模块迁移完成后，将旧目录移入项目回收站。",
+        "继续补充入口层 contract 校验，确保所有调用方都遵守 two_round / two_round_visual 主线。",
     ],
     "ai_constraints": [
         "禁止恢复 old native/legacy movie_story 主流程。",
         "禁止把 two_round_visual 缺配置时降级到 two_round。",
+        "禁止在统一入口中出现 fallback / silent downgrade。",
         "禁止修改基础双轮链和视觉增强链的两轮提示词内容，除非用户明确要求。",
     ],
 }
@@ -53,12 +61,13 @@ from app.services.movie_story.two_round_feature_modes import run_movie_story_two
 ProgressCallback = Optional[Callable[[int, str], None]]
 
 _ALLOWED_MOVIE_STORY_MODES = {"two_round", "two_round_visual"}
-_DISABLED_OLD_MOVIE_STORY_MODES = {
+_FORBIDDEN_MOVIE_STORY_MODES = {
     "native",
     "legacy",
     "native_runtime",
     "legacy_understanding",
     "subtitle_first_pipeline",
+    "plot_first_pipeline",
 }
 
 
@@ -109,6 +118,23 @@ def movie_story_scene_overrides_from_request(request: Dict[str, Any]) -> Dict[st
     return overrides
 
 
+def _validate_mainline_movie_story_mode(mode: str) -> str:
+    """Reject legacy/native movie_story mode values before any dispatch."""
+
+    normalized = str(mode or "").strip().lower()
+    if not normalized:
+        return "two_round"
+    if normalized in _FORBIDDEN_MOVIE_STORY_MODES:
+        raise RuntimeError(
+            "movie_story mainline mode is forbidden: "
+            f"{normalized}. use two_round or two_round_visual only; "
+            "legacy/native fallback is disabled."
+        )
+    if normalized not in _ALLOWED_MOVIE_STORY_MODES:
+        raise ValueError(f"unsupported_movie_story_mode:{normalized}")
+    return normalized
+
+
 def run_unified_edit_request(
     *,
     entry: str,
@@ -119,7 +145,15 @@ def run_unified_edit_request(
     """Run a front-end edit request through one normalized movie-story entry layer."""
 
     mode_info = resolve_unified_mode(entry, request)
-    logger.info("unified edit request: entry={} mode={}", mode_info.entry, mode_info.mode)
+    if mode_info.entry == ENTRY_MOVIE_STORY_SCRIPT:
+        mode = _validate_mainline_movie_story_mode(mode_info.mode)
+        logger.info(
+            "unified edit request accepted: entry={} mode={} mainline_only=true",
+            mode_info.entry,
+            mode,
+        )
+    else:
+        logger.info("unified edit request: entry={} mode={}", mode_info.entry, mode_info.mode)
 
     if mode_info.entry == ENTRY_MOVIE_STORY_SCRIPT:
         payload = run_movie_story_request(
@@ -194,11 +228,6 @@ def run_movie_story_request(
             output_script_path=output_script_path,
             visual_enabled=movie_story_mode == "two_round_visual",
         )
-    if movie_story_mode in _DISABLED_OLD_MOVIE_STORY_MODES:
-        raise RuntimeError(
-            "old native/legacy movie_story mainflow is disabled; "
-            "use two_round, two_round_visual, or the explicit long-video-to-short-video product path."
-        )
     raise ValueError(f"unsupported_movie_story_mode:{movie_story_mode}")
 
 
@@ -207,8 +236,9 @@ def _resolve_movie_story_mode(request: Dict[str, Any]) -> str:
 
     for key in ("movie_story_mode", "movie_story_feature_mode", "movie_story_strategy"):
         value = str(request.get(key) or "").strip().lower()
-        if value:
-            return value
+        if not value:
+            continue
+        return _validate_mainline_movie_story_mode(value)
     return "two_round"
 
 
