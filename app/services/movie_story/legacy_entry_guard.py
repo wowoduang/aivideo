@@ -3,9 +3,9 @@ from __future__ import annotations
 
 """Legacy/native movie_story guard.
 
-This module intentionally centralizes the set of forbidden movie_story entry modes.
-The project must never silently resurrect old native/legacy branches under the
-movie_story mainline.
+This file is intentionally the single whitelist/denylist boundary for old movie_story
+modes. The current official runtime must refuse legacy/native flow instead of
+reintroducing it via fallback logic.
 """
 
 LEGACY_MOVIE_STORY_MODES = {
@@ -19,8 +19,6 @@ LEGACY_MOVIE_STORY_MODES = {
 
 
 def assert_mainline_movie_story_mode(mode: str | None) -> str:
-    """Reject legacy/native movie_story modes before dispatch."""
-
     normalized = str(mode or "").strip().lower()
     if not normalized:
         return "two_round"
@@ -31,3 +29,5 @@ def assert_mainline_movie_story_mode(mode: str | None) -> str:
             "legacy/native fallback is disabled."
         )
     return normalized
+
+__all__ = ["LEGACY_MOVIE_STORY_MODES", "assert_mainline_movie_story_mode"]
