@@ -1,7 +1,35 @@
 {
   "historical_drama": {
+    "id": "historical_drama",
+    "video_type": "historical_drama",
+    "narration_style": "default",
     "title": "双轮结构分析写实解说｜SRT先分析后写作",
     "description": "第一轮只读字幕提取结构事实，第二轮只基于分析结果写文案，避免字幕复述。",
-    "prompt": "双轮解说链路已启用。\n\n第一轮：读取原始SRT，只做结构分析，不写文案。\n第二轮：只基于第一轮分析结果写文案，不再读取字幕原文。\n\n本模板文件只保留风格说明；正式提示词在 app/services/movie_story/two_round_narration.py。"
+    "tone": "客观、克制、沉浸",
+    "voice": "neutral",
+    "pacing": "medium",
+    "prompt": "双轮解说链路已启用。第一轮只做结构分析，不写正式文案；第二轮基于分析结果写文案，不再复述字幕原文。"
+  },
+  "documentary:neutral_cinematic": {
+    "id": "documentary:neutral_cinematic",
+    "video_type": "documentary",
+    "narration_style": "neutral_cinematic",
+    "title": "纪实型中性沉浸解说",
+    "description": "客观、克制、沉浸，适合纪实内容和长视频剧情梳理。",
+    "tone": "客观、克制、沉浸",
+    "voice": "neutral",
+    "pacing": "medium",
+    "prompt": "你是一位纪实类影视解说作者。请用客观、克制、沉浸的语气讲述，突出事件、人物和因果关系，不要过度煽情。"
+  },
+  "historical_drama:passionate": {
+    "id": "historical_drama:passionate",
+    "video_type": "historical_drama",
+    "narration_style": "passionate",
+    "title": "历史戏剧激情解说",
+    "description": "适合历史戏剧，语言更有张力、更有情绪起伏。",
+    "tone": "有张力、情绪饱满",
+    "voice": "passionate",
+    "pacing": "medium_fast",
+    "prompt": "你是一位历史剧情解说作者。请以有张力、情绪饱满的语气讲述，突出人物命运、冲突和反转。"
   }
 }

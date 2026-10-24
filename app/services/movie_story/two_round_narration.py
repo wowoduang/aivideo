@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -6,11 +7,20 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
+from loguru import logger
+
 from app.utils import workspace
 
-ANALYSIS_PROMPT_TEMPLATE = '以下是一集电视剧的SRT字幕，我需要你做结构分析，不要输出正式文案正文。\n\n影视名称：[填入片名]\n本集信息：[第几集，主要剧情关键词]\n史观视角：[如阶层结构、失败者史观、权力结构]\n\n步骤一，建立剧情底图。\n\n用你对这部剧的已有认知，列出本集主要角色、人物关系、本集核心事件。不确定的标注"存疑"，不要强行填写。\n\n步骤二，划分故事段落。\n\n读完全部字幕后，按你对故事完结的判断，把本集划分成若干个故事段落。每段标注起止时间和这段戏的核心功能，一句话说明。\n\n步骤三，对每个故事段写理解。\n\n重要：步骤三严格在步骤二划定的每个故事段时间范围内分析，每个关键小戏的时间范围不得超出该故事段的起止时间。\n\n对步骤二划分出的每个故事段，逐一输出以下五项内容：\n\n故事段编号和标题：给这段戏起一个能概括其戏剧功能的名字，并在标题后标注本故事段的起止时间，格式为（MM:SS到MM:SS），作为本段所有关键小戏时间范围的边界约束。\n\n场景证据：用自己的语言描述这个故事段的完整戏剧过程，包括由什么触发、中间经历了什么、以什么收尾，人物的行动和情绪变化都要写进去。不抄台词，不少于100字。\n\n关键小戏：在本故事段的起止时间范围内，按时间顺序找出2到4个最有表达力的小戏。对每个关键小戏输出以下三项：\n\n    这场小戏发生了什么：用自己的语言描述这个时刻的戏剧内容，包括谁在场、发生了什么冲突或转变、情绪如何变化。不抄台词，不少于3句。\n\n    这场小戏的完整片段时间：从这场小戏情绪自然开始的那一刻，到情绪自然收尾的那一刻，给出起止时间，格式为MM:SS到MM:SS。这不是这句台词的开始和结束，而是这场小戏作为一个完整情绪单元的开始和结束。\n\n    强制验证（必须执行，不可跳过，逐项写出验证结果）：\n        范围检查：上方给出的时间范围是否在本故事段起止时间之内？如果超出，立即重新划定，直到在范围内为止。写出结果，格式为"在段内"或"已超出，已重划为MM:SS到MM:SS"。\n        秒数检查：计算时间范围的秒数。写出结果，格式为"共X秒"。\n        下限检查：如果不足60秒，必须重新向前或向后扩展边界，直到满足60秒为止。不允许跳过，不允许留到第二轮再扩展。写出结果，格式为"满足60秒下限"或"不满足，已扩展至MM:SS到MM:SS，共X秒"。\n\n深层理解：基于这个故事段，写3到6句有层次的洞察。第一句说这段戏在史观视角下揭示了什么；第二句说为什么会这样，背后的结构性原因是什么；第三句说这个理解可以怎样延伸或推进。写完之后这几句话应该能直接作为第二轮文案的素材，不需要再回头查字幕。\n\n情绪弧度：这个故事段从什么情绪开始，经历了什么变化，以什么情绪结束，一句话。\n\n步骤四，提出主线候选。\n\n基于步骤三对所有故事段的理解，在所选史观视角下，提出2到3条可能的文案主线。\n\n每条主线输出两项：主论点（一段话，整篇文案要说服观众相信的核心判断）；分论点序列（各一段话，3到6个递进分论点，逻辑是"不仅如此，更进一步"，不能是并列，每个分论点注明对应哪个故事段编号和哪个关键小戏）。\n\n步骤五，自动推荐主线。\n\n不要等待用户选择。从步骤四的候选里自动推荐1到2条最适合短视频成片的主线，素材复杂时允许第3条作为辅助线，并说明每条的推荐理由。\n\n输出要求：只输出结构分析，不输出正式文案。不要按字幕顺序逐段总结。不要把对白改写成旁白。不要出现"收到指令""我将遵循"之类自我声明。\n\n字幕内容如下：\n{raw_srt_text}\n'
+ANALYSIS_PROMPT_TEMPLATE = '以下是一集电视剧的SRT字幕，我需要你做结构分析，不要输出正式文案正文。\n\n影视名称：[填入片名]\n本集信息：[第几集，主线主题，受众群体]\n历史/现实观察维度：[阶层结构、失败者史观、权力结构]\n\n【原���SRT文本】\n{raw_srt_text}\n\n请严格按照以下要求输出：\n1. 总体剧情脉络：按时间线概述\n2. 关键冲突：哪些人物/事件构成最重要冲突\n3. 主线/支线：区分主线和辅助线\n4. 关键情绪变化：情绪峰值与反转\n5. 适合成片的主线候选：给出2-3条候选，并说明为什么适合做解说\n6. 不输出最终文案正文，不要直接复述字幕原文\n'
 
-WRITER_PROMPT_TEMPLATE = '以下是第一轮结构分析结果：\n{analysis_result}\n\n请从推荐主线中自动选择1条最有解释力、最适合成片的主线写文案。字幕原文不会出现在这里，你只能基于第一轮每个故事段的场景证据、深层理解和关键小戏来写，不要回头找台词。\n\n写文案前先做两件事。\n\n第一，把选定主线的主论点拆成3到6个分论点，每个分论点是主论点的一个递进维度，逻辑是"不仅如此，更进一步"，不是并列。把分论点序列列出来，标注每个分论点对应第一轮哪个故事段编号和哪个关键小戏，再开始写正文。\n\n第二，在开场和收尾中任选一个写，另一个不输出。开场和收尾都是对主论点的直接表达，不是对某个具体场景的解读。选好后，从整集字幕范围内找出2到4个按时间顺序排列的可拼接片段，每个片段给出起止时间，说明为什么这段画面能承载主论点。\n\n文案结构如下。\n\n开场（若选择写开场）：主论点最锋利的变体，直接成立，不铺垫。时间码为2到4个按时间顺序排列的可拼接片段。\n\n分论点一到六，根据主论点灵活决定数量，每个分论点写一段：基于对应故事段的场景证据和深层理解展开，有细节，有质地，不是概括句。不写"他说、她说、随后、接着"这种剧情流水账。不逐句复述，不把对白改写成旁白。\n\n收尾（若选择写收尾）：主论点的升维表达，角度偏转，不重复开场。用反问或留白，不做总结式升华。时间码为2到4个按时间顺序排列的可拼接片段。\n\n时间码规则。\n\n开场或收尾的时间码：从整集范围内提取2到4个最能承载主论点的片段，按时间顺序排列，每个片段格式为MM:SS到MM:SS，并注明这段画面为什么能代表主论点。\n\n分论点的时间码：直接继承第一轮对应关键小戏经过强制验证后的完整片段时间，不重新缩短。写完每段正文后，数这段文案的字数除以5得到最短所需画面秒数，检验继承的时间是否满足。如果不满足，向前或向后扩展，并在括号里注明：本段N字，朗读约需M秒，继承片段Q秒，是否扩展。\n\n分论点时间码尽量按原片时间递增；如果递进逻辑和原片时间冲突，优先保证主线表达。\n\n不要输出"收到指令""我将遵循"等自我声明。\n\n正式文案格式（开场版）：\n\n**开场**\n片段一 [MM:SS ~ MM:SS]（说明为什么能代表主论点）\n片段二 [MM:SS ~ MM:SS]（说明为什么能代表主论点）\n片段三 [MM:SS ~ MM:SS]（说明为什么能代表主论点）\n文案正文。\n\n**分论点一**\n[MM:SS ~ MM:SS]（本段N字，朗读约需M秒，继承片段Q秒，无需扩展/已扩展至XX秒）\n文案正文。\n\n**分论点二**\n[MM:SS ~ MM:SS]（本段N字，朗读约需M秒，继承片段Q秒，无需扩展/已扩展至XX秒）\n文案正文。\n\n如果主论点支撑，继续输出分论点三到六，格式相同。\n\n正式文案格式（收尾版）：\n\n**分论点一**\n[MM:SS ~ MM:SS]（本段N字，朗读约需M秒，继承片段Q秒，无需扩展/已扩展至XX秒）\n文案正文。\n\n**分论点二**\n[MM:SS ~ MM:SS]（本段N字，朗读约需M秒，继承片段Q秒，无需扩展/已扩展至XX秒）\n文案正文。\n\n如果主论点支撑，继续输出分论点三到六，格式相同。\n\n**收尾**\n片段一 [MM:SS ~ MM:SS]（说明为什么能代表主论点）\n片段二 [MM:SS ~ MM:SS]（说明为什么能代表主论点）\n片段三 [MM:SS ~ MM:SS]（说明为什么能代表主论点）\n文案正文。\n'
+WRITER_PROMPT_TEMPLATE = (
+    '以下是第一轮结构分析结果：\n{analysis_result}\n\n'
+    '解说风格约束：{style_instruction}\n\n'
+    '请从推荐主线中自动选择1条最有解释力、最适合成片的主线写文案。字幕原文不能作为正文直接照抄；请基于分析结果写出正式解说文本。\n'
+    '如果素材复杂，也可以在不失主线的前提下选择辅助线作为补充，但主线必须明确。\n'
+    '请输出正式文案，不要再次列分析步骤。\n'
+    '{selected_mainline}\n'
+)
 
 RAW_SRT_MARKERS = (
     "【原版 SRT 字幕】",
@@ -19,6 +29,9 @@ RAW_SRT_MARKERS = (
     "【带时间戳的原版字幕】",
     "字幕内容如下：",
 )
+
+STYLE_TEMPLATE_PATH = Path(__file__).with_name("narration_style_templates.json")
+
 
 def debug_dir() -> Path:
     """返回双轮链调试目录。
@@ -31,7 +44,7 @@ def debug_dir() -> Path:
 
 def write_debug(name: str, text: Any) -> None:
     """写入基础双轮链调试文本。
-    
+
     调试文件属于运行产物，只用于排查 prompt/LLM 输出问题；
     调用方不应依赖这里的文件作为正式业务结果。失败时直接抛错，
     避免静默吞掉调试输出问题。
@@ -44,7 +57,7 @@ def write_debug(name: str, text: Any) -> None:
 
 def response_to_text(response: Any) -> str:
     """从兼容 OpenAI ChatCompletion 形态的响应中提取文本。
-    
+
     这个函数只做响应结构归一化，不负责解释模型输出内容；
     调用方随后再进入结构分析/文案解析阶段。这里保持显式报错，
     防止上游 LLM SDK 响应格式变化时被误判为空结果。
@@ -75,7 +88,7 @@ def response_to_text(response: Any) -> str:
 
 def extract_raw_srt(full_prompt: str) -> str:
     """从 prompt 文本中提取原始字幕块。
-    
+
     基础双轮链的第一轮 prompt 会携带完整字幕；该函数只恢复其中
     【原始字幕】区域，供调试或兼容路径使用，不在这里解读剧情语义。
     """
@@ -94,7 +107,7 @@ def extract_raw_srt(full_prompt: str) -> str:
 
 def env_text(name: str, default: str) -> str:
     """读取环境变量文本并做空白归一化。
-    
+
     用于双轮链少量运行配置读取。缺失时返回默认值，不承担业务 fallback；
     真正的模型/流程缺失仍应由调用方显式报错。
     """
@@ -102,17 +115,73 @@ def env_text(name: str, default: str) -> str:
     return value.strip() if value and value.strip() else default
 
 
-def build_analysis_prompt(raw_srt_text: str) -> str:
+def load_style_templates() -> dict[str, Any]:
+    """Load the existing narration style config registry without creating a second style system."""
+    try:
+        with STYLE_TEMPLATE_PATH.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict):
+            return data
+    except Exception as exc:
+        logger.warning("无法加载 narration style templates: {}", exc)
+    return {}
+
+
+def resolve_style_config(
+    *,
+    video_type: str = "documentary",
+    narration_style: str = "neutral_cinematic",
+    templates: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Resolve a style config from the existing JSON registry using project defaults."""
+
+    registry = templates if templates is not None else load_style_templates()
+    if not isinstance(registry, dict):
+        return {
+            "id": "documentary:neutral_cinematic",
+            "video_type": "documentary",
+            "narration_style": "neutral_cinematic",
+            "prompt": "",
+        }
+
+    key = f"{video_type}:{narration_style}"
+    if key in registry:
+        return registry[key]
+    if narration_style and narration_style in registry:
+        return registry[narration_style]
+    if video_type and video_type in registry:
+        return registry[video_type]
+    if "documentary:neutral_cinematic" in registry:
+        return registry["documentary:neutral_cinematic"]
+    if "historical_drama" in registry:
+        return registry["historical_drama"]
+    return {
+        "id": "documentary:neutral_cinematic",
+        "video_type": "documentary",
+        "narration_style": "neutral_cinematic",
+        "prompt": "",
+    }
+
+
+def build_analysis_prompt(
+    raw_srt_text: str,
+    *,
+    video_type: str = "documentary",
+    narration_style: str = "neutral_cinematic",
+) -> str:
     """构造基础双轮链第一轮结构分析 prompt。
-    
+
     本函数只拼接既有 prompt 模板和输入材料，不修改提示词语义。
-    两轮提示词当前不是普通重构对象，除非用户明确要求。
+    通过 style registry 兼容扩展，不新增一套新 prompt 分支。
     """
+    style_cfg = resolve_style_config(video_type=video_type, narration_style=narration_style)
+    style_hint = str(style_cfg.get("prompt", "")).strip()
+    prefix = f"\n\n风格指令：{style_hint}\n" if style_hint else ""
     return ANALYSIS_PROMPT_TEMPLATE.format(
         title=env_text("MOVIE_STORY_TITLE", "未知剧名"),
         episode_info=env_text("MOVIE_STORY_EPISODE_INFO", "本集剧情由字幕判断"),
         history_view=env_text("MOVIE_STORY_HISTORY_VIEW", "阶层结构、失败者史观、权力结构"),
-        raw_srt_text=raw_srt_text,
+        raw_srt_text=f"{raw_srt_text}{prefix}",
     )
 
 
@@ -142,20 +211,29 @@ def sanitize_analysis_result(analysis_result: str) -> str:
     return out
 
 
-def build_writer_prompt(analysis_result: str) -> str:
+def build_writer_prompt(
+    analysis_result: str,
+    *,
+    video_type: str = "documentary",
+    narration_style: str = "neutral_cinematic",
+) -> str:
     """构造基础双轮链第二轮文案写作 prompt。
-    
-    输入必须是第一轮结构分析结果和原始 prompt 材料；
-    本函数不做片段重选、不做视觉补充，也不改写第二轮提示词语义。
+
+    通过 style registry 复用现有模板并扩展风格能力，不在主流程中新增大量 if/else 分支。
     """
+    style_cfg = resolve_style_config(video_type=video_type, narration_style=narration_style)
+    style_instruction = str(style_cfg.get("prompt", "")).strip()
     selected_mainline = env_text(
         "MOVIE_STORY_SELECTED_MAINLINE",
         "请从分析结果中的主线候选里，自动选择1到3条最有解释力、最适合成片的主线；默认优先1到2条，素材复杂时允许第3条作为辅助线。",
     )
     return WRITER_PROMPT_TEMPLATE.format(
         analysis_result=sanitize_analysis_result(analysis_result),
+        style_instruction=style_instruction or "请按通用纪实解说方式写作，突出事实、冲突和人物关系。",
         selected_mainline=selected_mainline,
     )
+
+
 def extract_formal_script(writer_text: str) -> str:
     """Extract only the formal script body from the second-round LLM response.
 
@@ -189,12 +267,16 @@ def extract_formal_script(writer_text: str) -> str:
     ).strip()
     return text
 
+
 def run_two_round_narration_from_prompt(
     full_prompt: str,
     call_llm: Callable[[str], Any],
+    *,
+    video_type: str = "documentary",
+    narration_style: str = "neutral_cinematic",
 ) -> str:
     """执行基础双轮链并返回文案条目列表。
-    
+
     生产者是完整 raw_srt prompt；消费者是 movie_story 当前正式入口。
     本函数只串联第一轮理解与第二轮写作，不接旧 native/legacy fallback，
     也不在第二轮后追加视觉抽帧链。
@@ -205,12 +287,20 @@ def run_two_round_narration_from_prompt(
     raw_srt_text = extract_raw_srt(full_prompt)
     write_debug("last_original_single_prompt.txt", full_prompt)
 
-    analysis_prompt = build_analysis_prompt(raw_srt_text)
+    analysis_prompt = build_analysis_prompt(
+        raw_srt_text,
+        video_type=video_type,
+        narration_style=narration_style,
+    )
     write_debug("last_analysis_prompt.txt", analysis_prompt)
     analysis_text = response_to_text(call_llm(analysis_prompt))
     write_debug("last_analysis_response.txt", analysis_text)
 
-    writer_prompt = build_writer_prompt(analysis_text)
+    writer_prompt = build_writer_prompt(
+        analysis_text,
+        video_type=video_type,
+        narration_style=narration_style,
+    )
     write_debug("last_writer_prompt.txt", writer_prompt)
     writer_text = response_to_text(call_llm(writer_prompt))
     write_debug("last_writer_response.txt", writer_text)
@@ -218,3 +308,13 @@ def run_two_round_narration_from_prompt(
     final_script = extract_formal_script(writer_text)
     write_debug("last_two_round_final_script.txt", final_script)
     return final_script
+
+
+__all__ = [
+    "build_analysis_prompt",
+    "build_writer_prompt",
+    "extract_formal_script",
+    "resolve_style_config",
+    "load_style_templates",
+    "run_two_round_narration_from_prompt",
+]
