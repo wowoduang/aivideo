@@ -1,251 +1,317 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""
-unified_entry.py
-
-统一前端编辑入口。负责把前端 movie_story / highlight 请求路由到当前正式主流程。
-
-主线约束：
-- movie_story 仅允许 two_round / two_round_visual
-- native / legacy / subtitle_first_pipeline 不能作为入口也不能作为 fallback
-- highlight 产品链保留独立边界，不与 movie_story 主线混用
-"""
-
-__CONTEXT__ = {
-    "layer": "service",
-    "domain": "movie_story.unified_entry",
-    "entry_points": [
-        "run_unified_edit_request",
-        "run_movie_story_request",
-        "run_highlight_request",
-    ],
-    "called_by": [
-        "app.services.local_job_runner",
-        "app.api.routers.jobs",
-    ],
-    "decisions": [
-        "2026-05: movie_story_script 主流程只允许 two_round / two_round_visual；旧 native/legacy 不再作为主流程或 fallback。",
-        "2026-05: highlight_edit 产品链仍通过 run_highlight_edit_engine 路由，和 movie_story_script 主流程分离。",
-        "2026-10: 在统一入口增加强制 mode guard，禁止绕过主线 or 混入 legacy fallback。",
-    ],
-    "pending": [
-        "长视频拆多个短视频产品链稳定后，在此处增加独立显式入口，不能复用旧 native/legacy movie_story。",
-        "legacy/native 中仍有价值的确定性模块迁移完成后，将旧目录移入项目回收站。",
-        "继续补充入口层 contract 校验，确保所有调用方都遵守 two_round / two_round_visual 主线。",
-    ],
-    "ai_constraints": [
-        "禁止恢复 old native/legacy movie_story 主流程。",
-        "禁止把 two_round_visual 缺配置时降级到 two_round。",
-        "禁止在统一入口中出现 fallback / silent downgrade。",
-        "禁止修改基础双轮链和视觉增强链的两轮提示词内容，除非用户明确要求。",
-    ],
-}
-
-import os
-from typing import Any, Callable, Dict, Optional
+from dataclasses import asdict, dataclass, field, is_dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
-from app.services.movie_story.edit_modes import (
-    ENTRY_HIGHLIGHT_SCRIPT,
-    ENTRY_MOVIE_STORY_SCRIPT,
-    RAW_HIGHLIGHT,
-    engine_mode_for_highlight,
-    resolve_unified_mode,
-)
-from app.services.movie_story.edit_result import UnifiedEditResult
-from app.services.highlight_edit_pipeline import run_highlight_edit_pipeline
-from app.services.movie_story.two_round_feature_modes import run_movie_story_two_round_feature_mode
-
-ProgressCallback = Optional[Callable[[int, str], None]]
-
-_ALLOWED_MOVIE_STORY_MODES = {"two_round", "two_round_visual"}
-_FORBIDDEN_MOVIE_STORY_MODES = {
-    "native",
-    "legacy",
-    "native_runtime",
-    "legacy_understanding",
-    "subtitle_first_pipeline",
-    "plot_first_pipeline",
+__CONTEXT__ = {
+    "layer": "schema",
+    "domain": "movie_story.pipeline_contracts",
+    "entry_points": [
+        "SubtitleUnit",
+        "SceneCandidate",
+        "DraftStoryCandidate",
+        "EvidenceSegment",
+        "SelectedHighlight",
+        "EventGroundingEntry",
+        "BeatWindowCandidate",
+        "NarrationSentence",
+        "StoryProductionPlan",
+        "FactSegment",
+        "NarrativeBeat",
+        "NarrationItem",
+    ],
+    "called_by": [
+        "app.services.movie_story.unified_entry",
+        "app.services.movie_story.stage1_segmentation",
+        "app.services.movie_story.stage2_evidence",
+        "app.services.movie_story.stage3_highlight_selection",
+        "app.services.movie_story.narration_finalize",
+    ],
+    "decisions": [
+        "2026-10: 引入三轮人机流水线合同，明确事实理解 / 节拍设计 / 定稿核对三段式边界。",
+        "2026-10: 统一时间轴、事件、节拍、最终文案的 schema，确保 AI/layer 之间有稳定契约。",
+    ],
+    "pending": [
+        "将历史 movie_story 相关单文件继续拆分，并逐步替换为这些 schema 约束。",
+        "各调用方按照三轮流程强制检查输入输出契约。",
+    ],
+    "ai_constraints": [
+        "禁止在此文件中叠加 legacy / native fallback 逻辑。",
+        "禁止直接写最终成稿到事实层/节拍层 schema 中。",
+        "新增字段必须保持向后兼容，旧字段不可被静默覆盖。",
+    ],
 }
 
 
-def movie_story_scene_overrides_from_request(request: Dict[str, Any]) -> Dict[str, Any]:
-    """Preserve advanced movie-story controls at the unified API boundary."""
+@dataclass
+class FactSegment:
+    """事实层输出：只描述事实，不直接写成最终解说。"""
 
-    overrides: Dict[str, Any] = {
-        "target_duration_minutes": int(request.get("target_duration_minutes", 8) or 8),
-        "narrative_strategy": str(request.get("narrative_strategy", "chronological") or "chronological"),
-        "accuracy_priority": str(request.get("accuracy_priority", "high") or "high"),
-        "highlight_only": bool(request.get("highlight_only", False)),
-        "highlight_selectivity": str(request.get("highlight_selectivity", "balanced") or "balanced"),
-        "video_title": str(request.get("video_theme", "") or request.get("video_title", "") or ""),
-        "short_name": str(request.get("video_theme", "") or request.get("video_title", "") or ""),
-        "temperature": float(request.get("temperature", 0.7) or 0.7),
-        "prologue_strategy": str(request.get("prologue_strategy", "speech_first") or "speech_first"),
-        "manual_prologue_end_time": str(request.get("manual_prologue_end_time", "") or ""),
-        "movie_story_strategy": str(request.get("movie_story_strategy", "") or ""),
-        "skip_llm": bool(request.get("skip_llm", False)),
-    }
-    passthrough_keys = [
-        "movie_story_narration_llm_mode",
-        "narration_llm_mode",
-        "movie_story_narration_llm_max_segments",
-        "movie_story_enable_global_llm",
-        "movie_story_enable_segment_llm",
-        "movie_story_enable_story_validation_llm",
-        "movie_story_enable_highlight_plan_llm",
-        "movie_story_enable_narration_validation_llm",
-        "movie_story_disable_llm_highlight_plan",
-        "movie_story_highlight_plan_max_candidates",
-        "movie_story_typed_selector_error_policy",
-        "movie_story_audit_export_clips",
-        "movie_story_audit_keep_runs",
-        "movie_story_audit_keep_stages",
-        "movie_story_audit_include_legacy_stages",
-        "movie_story_audit_clip_stages",
-        "movie_story_audit_max_clips_per_stage",
-        "boundary_merge_window_sec",
-        "clip_match_tolerance_seconds",
-        "scene_threshold",
-        "min_scene_len",
-        "skip_llm",
-    ]
-    for key in passthrough_keys:
-        if key in request and request.get(key) is not None:
-            overrides[key] = request.get(key)
-    return overrides
+    segment_id: str
+    title: str
+    summary: str
+    time_range: str
+    evidence_ids: List[str] = field(default_factory=list)
 
 
-def _validate_mainline_movie_story_mode(mode: str) -> str:
-    """Reject legacy/native movie_story mode values before any dispatch."""
+@dataclass
+class NarrativeBeat:
+    """节拍层输出：负责设计“怎么讲”，不属于最终定稿。"""
 
-    normalized = str(mode or "").strip().lower()
-    if not normalized:
-        return "two_round"
-    if normalized in _FORBIDDEN_MOVIE_STORY_MODES:
-        raise RuntimeError(
-            "movie_story mainline mode is forbidden: "
-            f"{normalized}. use two_round or two_round_visual only; "
-            "legacy/native fallback is disabled."
-        )
-    if normalized not in _ALLOWED_MOVIE_STORY_MODES:
-        raise ValueError(f"unsupported_movie_story_mode:{normalized}")
-    return normalized
+    beat_id: str
+    phase: str
+    hook: str
+    content: str
+    time_range: str
+    evidence_ids: List[str] = field(default_factory=list)
 
 
-def run_unified_edit_request(
-    *,
-    entry: str,
-    request: Dict[str, Any],
-    progress_callback: ProgressCallback = None,
-    output_script_path: str = "",
-) -> Dict[str, Any]:
-    """Run a front-end edit request through one normalized movie-story entry layer."""
+@dataclass
+class NarrationItem:
+    """定稿层输出：最终脚本 item。"""
 
-    mode_info = resolve_unified_mode(entry, request)
-    if mode_info.entry == ENTRY_MOVIE_STORY_SCRIPT:
-        mode = _validate_mainline_movie_story_mode(mode_info.mode)
-        logger.info(
-            "unified edit request accepted: entry={} mode={} mainline_only=true",
-            mode_info.entry,
-            mode,
-        )
-    else:
-        logger.info("unified edit request: entry={} mode={}", mode_info.entry, mode_info.mode)
-
-    if mode_info.entry == ENTRY_MOVIE_STORY_SCRIPT:
-        payload = run_movie_story_request(
-            request=request,
-            progress_callback=progress_callback,
-            output_script_path=output_script_path,
-        )
-    elif mode_info.entry == ENTRY_HIGHLIGHT_SCRIPT:
-        payload = run_highlight_request(
-            request=request,
-            progress_callback=progress_callback,
-        )
-    else:
-        payload = {
-            "success": False,
-            "error": f"unsupported_unified_entry:{mode_info.entry}",
-            "script_items": [],
-            "warnings": [],
-        }
-
-    result = UnifiedEditResult.from_payload(entry=mode_info.entry, mode=mode_info.mode, payload=payload)
-    normalized = result.to_payload()
-    normalized.setdefault("unified_mode_info", mode_info.as_dict())
-    return normalized
+    item_id: str
+    script_text: str
+    time_range: str
+    fact_ids: List[str] = field(default_factory=list)
+    beat_ids: List[str] = field(default_factory=list)
 
 
-def run_highlight_request(
-    *,
-    request: Dict[str, Any],
-    progress_callback: ProgressCallback = None,
-) -> Dict[str, Any]:
-    """Run the highlight edit product path through its separate engine boundary."""
+@dataclass
+class SubtitleUnit:
+    unit_id: str
+    start: float
+    end: float
+    text: str
 
-    mode_info = resolve_unified_mode(ENTRY_HIGHLIGHT_SCRIPT, request)
-    prefer_raw_audio = bool(request.get("prefer_raw_audio", True)) or mode_info.mode == RAW_HIGHLIGHT
-    return run_highlight_edit_pipeline(
-        video_path=str(request.get("video_path", "") or ""),
-        mode=engine_mode_for_highlight(mode_info.mode),
-        target_duration_seconds=int(request.get("target_duration_seconds", 480) or 480),
-        movie_title=str(request.get("movie_title", "") or ""),
-        highlight_profile=str(request.get("highlight_profile", "auto") or "auto"),
-        subtitle_path=str(request.get("subtitle_path", "") or ""),
-        narration_text=str(request.get("narration_text", "") or ""),
-        narration_audio_path=str(request.get("narration_audio_path", "") or ""),
-        prefer_raw_audio=prefer_raw_audio,
-        visual_mode="off" if bool(request.get("skip_llm", False)) else str(request.get("visual_mode", "auto") or "auto"),
-        regenerate_subtitle=bool(request.get("regenerate_subtitle", False)),
-        subtitle_backend=str(request.get("subtitle_backend", "") or ""),
-        engine_backend=str(request.get("engine_backend", "") or ""),
-        edit_engine_backend=str(request.get("edit_engine_backend", "") or ""),
-        highlight_engine_backend=str(request.get("highlight_engine_backend", "") or ""),
-        progress_callback=progress_callback,
-    )
+    @property
+    def duration(self) -> float:
+        return round(max(0.0, self.end - self.start), 3)
 
 
-def run_movie_story_request(
-    *,
-    request: Dict[str, Any],
-    progress_callback: ProgressCallback = None,
-    output_script_path: str = "",
-) -> Dict[str, Any]:
-    """Run one of the current movie_story mainflows; old native/legacy are rejected."""
+@dataclass
+class EventGroundingEntry:
+    """事实层输出：视频中的事件事实，不包含最终解说文案。"""
 
-    if not output_script_path:
-        output_script_path = str(request.get("output_script_path", "") or "")
+    event_id: str
+    timestamp_start: float
+    timestamp_end: float
+    subject: str = ""
+    target: str = ""
+    action: str = ""
+    result: str = ""
+    confusion: str = ""
+    ambiguity: str = ""
+    evidence_source: str = "visual+subtitle"
+    risk_level: str = "low"
+    notes: List[str] = field(default_factory=list)
 
-    movie_story_mode = _resolve_movie_story_mode(request)
-    if movie_story_mode in _ALLOWED_MOVIE_STORY_MODES:
-        return run_movie_story_two_round_feature_mode(
-            request=request,
-            progress_callback=progress_callback,
-            output_script_path=output_script_path,
-            visual_enabled=movie_story_mode == "two_round_visual",
-        )
-    raise ValueError(f"unsupported_movie_story_mode:{movie_story_mode}")
-
-
-def _resolve_movie_story_mode(request: Dict[str, Any]) -> str:
-    """Resolve the explicit current movie_story mode without legacy fallback."""
-
-    for key in ("movie_story_mode", "movie_story_feature_mode", "movie_story_strategy"):
-        value = str(request.get(key) or "").strip().lower()
-        if not value:
-            continue
-        return _validate_mainline_movie_story_mode(value)
-    return "two_round"
+    @property
+    def duration(self) -> float:
+        return round(max(0.0, self.timestamp_end - self.timestamp_start), 3)
 
 
-def build_task_output_script_path(*, request: Dict[str, Any], task_dir: str) -> str:
-    """Build the output path used by local job runner for movie_story script jobs."""
+@dataclass
+class BeatWindowCandidate:
+    """节拍层输出：一个节拍的候选窗口，不属于最终文案。"""
 
-    requested = str(request.get("output_script_path", "") or "").strip()
-    if requested:
-        return requested
-    return os.path.join(task_dir, "movie_story_script.json")
+    beat_id: str
+    beat_index: int
+    start: float
+    end: float
+    alternatives: List[Tuple[float, float]] = field(default_factory=list)
+    hook: str = ""
+    suspense: str = ""
+    remove: bool = False
+    reason: str = ""
+    style_hint: str = ""
+
+    @property
+    def duration(self) -> float:
+        return round(max(0.0, self.end - self.start), 3)
+
+
+@dataclass
+class NarrationSentence:
+    """定稿层输出：句子级最终解说内容。"""
+
+    sentence_id: str
+    beat_id: str
+    sentence_index: int
+    start: float
+    end: float
+    text: str = ""
+    style: str = "default"
+    estimated_chars: int = 0
+    requires_manual_check: bool = False
+    check_reason: str = ""
+
+    @property
+    def duration(self) -> float:
+        return round(max(0.0, self.end - self.start), 3)
+
+
+@dataclass
+class StoryProductionPlan:
+    """聚合输出：事实 -> 节拍 -> 定稿三层最终计划。"""
+
+    plan_id: str
+    title: str = ""
+    events: List[EventGroundingEntry] = field(default_factory=list)
+    beats: List[BeatWindowCandidate] = field(default_factory=list)
+    sentences: List[NarrationSentence] = field(default_factory=list)
+    style: str = "default"
+    estimated_duration_sec: int = 0
+
+
+@dataclass
+class SceneCandidate:
+    """第一阶段细粒度候选片段。
+
+    这里刻意只保存结构切片信息，不出现 highlight_score / selected 等第三阶段才应该产生的字段。
+    """
+
+    candidate_id: str
+    candidate_type: str
+    video_start: float
+    video_end: float
+    subtitle_start: Optional[float] = None
+    subtitle_end: Optional[float] = None
+    subtitle_text: str = ""
+    boundary_start_reason: List[str] = field(default_factory=list)
+    boundary_end_reason: List[str] = field(default_factory=list)
+    boundary_confidence: str = "medium"
+    source_scene_ids: List[str] = field(default_factory=list)
+    nonstory_tag: Optional[str] = None
+    need_semantic_review: bool = True
+
+    @property
+    def duration(self) -> float:
+        return round(max(0.0, self.video_end - self.video_start), 3)
+
+
+@dataclass
+class DraftStoryCandidate:
+    """第一阶段粗粒度故事候选块。
+
+    它只是初步合并结果，不代表最终高光，不允许在这里做目标时长压缩。
+    """
+
+    candidate_id: str
+    candidate_type: str
+    video_start: float
+    video_end: float
+    children: List[str]
+    subtitle_text: str
+    merge_reason: List[str] = field(default_factory=list)
+    boundary_confidence: str = "medium"
+    need_semantic_review: bool = True
+    nonstory_tag: Optional[str] = None
+
+    @property
+    def duration(self) -> float:
+        return round(max(0.0, self.video_end - self.video_start), 3)
+
+
+@dataclass
+class EvidenceSegment:
+    """第二阶段证据增强后的候选。
+
+    第二阶段只补证据和标签；弱片段只能打 drop_suggestion，不从列表中删除。
+    """
+
+    candidate_id: str
+    candidate_type: str
+    video_start: float
+    video_end: float
+    evidence_start: Optional[float] = None
+    evidence_end: Optional[float] = None
+    semantic_start: Optional[float] = None
+    semantic_end: Optional[float] = None
+    subtitle_text: str = ""
+    visual_evidence: Dict[str, Any] = field(default_factory=dict)
+    character_trace: Dict[str, Any] = field(default_factory=dict)
+    plot_function: str = ""
+    importance_level: str = "medium"
+    emotion_tags: List[str] = field(default_factory=list)
+    information_tags: List[str] = field(default_factory=list)
+    raw_voice_suggestion: bool = False
+    drop_suggestion: bool = False
+    drop_reason: str = ""
+    split_merge_suggestion: Dict[str, Any] = field(default_factory=dict)
+    evidence_warnings: List[str] = field(default_factory=list)
+    source_candidate: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def duration(self) -> float:
+        return round(max(0.0, self.video_end - self.video_start), 3)
+
+
+@dataclass
+class SelectedHighlight:
+    """第三阶段最终选中高光。
+
+    注意：video_start/video_end 必须原样继承候选，不能被 TTS 或脚本长度反向修改。
+    """
+
+    highlight_id: str
+    source_candidate_id: str
+    video_start: float
+    video_end: float
+    evidence_start: Optional[float]
+    evidence_end: Optional[float]
+    selected: bool
+    selection_mode: str
+    scores: Dict[str, float]
+    selection_reasons: List[str]
+    character_trace: Dict[str, Any]
+    keep_original_audio: bool = False
+    highlight_rank: int = 0
+    source_segment: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def duration(self) -> float:
+        return round(max(0.0, self.video_end - self.video_start), 3)
+
+
+def to_dict(obj: Any) -> Any:
+    if is_dataclass(obj):
+        data = asdict(obj)
+        if hasattr(obj, "duration"):
+            data["duration"] = getattr(obj, "duration")
+        return data
+    if isinstance(obj, list):
+        return [to_dict(x) for x in obj]
+    if isinstance(obj, tuple):
+        return [to_dict(x) for x in obj]
+    if isinstance(obj, dict):
+        out = {k: to_dict(v) for k, v in obj.items()}
+        if "duration" not in out:
+            s, e = item_time_range(out)
+            if s is not None and e is not None:
+                out["duration"] = round(e - s, 3)
+        return out
+    return obj
+
+
+def item_time_range(obj: Any) -> Tuple[Optional[float], Optional[float]]:
+    data = asdict(obj) if is_dataclass(obj) else obj
+    if not isinstance(data, dict):
+        return None, None
+    for sk, ek in [("video_start", "video_end"), ("start", "end"), ("evidence_start", "evidence_end")]:
+        if data.get(sk) is not None and data.get(ek) is not None:
+            try:
+                s, e = float(data[sk]), float(data[ek])
+                if e > s:
+                    return s, e
+            except Exception as _e:
+                logger.debug("时间字段转 float 失败，跳过: {}", _e)
+    return None, None
+
+
+def item_duration(obj: Any) -> float:
+    s, e = item_time_range(obj)
+    return round(e - s, 3) if s is not None and e is not None else 0.0
