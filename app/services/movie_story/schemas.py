@@ -4,6 +4,44 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from loguru import logger
+
+__CONTEXT__ = {
+    "layer": "schema",
+    "domain": "movie_story.pipeline_contracts",
+    "entry_points": [
+        "SubtitleUnit",
+        "SceneCandidate",
+        "DraftStoryCandidate",
+        "EvidenceSegment",
+        "SelectedHighlight",
+        "EventGroundingEntry",
+        "BeatWindowCandidate",
+        "NarrationSentence",
+        "StoryProductionPlan",
+    ],
+    "called_by": [
+        "app.services.movie_story.unified_entry",
+        "app.services.movie_story.stage1_segmentation",
+        "app.services.movie_story.stage2_evidence",
+        "app.services.movie_story.stage3_highlight_selection",
+        "app.services.movie_story.narration_finalize",
+    ],
+    "decisions": [
+        "2026-10: 引入三轮人机流水线合同，明确事实理解 / 节拍设计 / 定稿核对三段式边界。",
+        "2026-10: 统一时间轴、事件、节拍、最终文案的 schema，确保 AI/layer 之间有稳定契约。",
+    ],
+    "pending": [
+        "将历史 movie_story 相关单文件继续拆分，并逐步替换为这些 schema 约束。",
+        "各调用方按照三轮流程强制检查输入输出契约。",
+    ],
+    "ai_constraints": [
+        "禁止在此文件中叠加 legacy / native fallback 逻辑。",
+        "禁止直接写最终成稿到事实层/节拍层 schema 中。",
+        "新增字段必须保持向后兼容，旧字段不可被静默覆盖。",
+    ],
+}
+
 
 @dataclass
 class SubtitleUnit:
@@ -15,6 +53,81 @@ class SubtitleUnit:
     @property
     def duration(self) -> float:
         return round(max(0.0, self.end - self.start), 3)
+
+
+@dataclass
+class EventGroundingEntry:
+    """事实层输出：视频中的事件事实，不包含最终解说文案。"""
+
+    event_id: str
+    timestamp_start: float
+    timestamp_end: float
+    subject: str = ""
+    target: str = ""
+    action: str = ""
+    result: str = ""
+    confusion: str = ""
+    ambiguity: str = ""
+    evidence_source: str = "visual+subtitle"
+    risk_level: str = "low"
+    notes: List[str] = field(default_factory=list)
+
+    @property
+    def duration(self) -> float:
+        return round(max(0.0, self.timestamp_end - self.timestamp_start), 3)
+
+
+@dataclass
+class BeatWindowCandidate:
+    """节拍层输出：一个节拍的候选窗口，不属于最终文案。"""
+
+    beat_id: str
+    beat_index: int
+    start: float
+    end: float
+    alternatives: List[Tuple[float, float]] = field(default_factory=list)
+    hook: str = ""
+    suspense: str = ""
+    remove: bool = False
+    reason: str = ""
+    style_hint: str = ""
+
+    @property
+    def duration(self) -> float:
+        return round(max(0.0, self.end - self.start), 3)
+
+
+@dataclass
+class NarrationSentence:
+    """定稿层输出：句子级最终解说内容。"""
+
+    sentence_id: str
+    beat_id: str
+    sentence_index: int
+    start: float
+    end: float
+    text: str = ""
+    style: str = "default"
+    estimated_chars: int = 0
+    requires_manual_check: bool = False
+    check_reason: str = ""
+
+    @property
+    def duration(self) -> float:
+        return round(max(0.0, self.end - self.start), 3)
+
+
+@dataclass
+class StoryProductionPlan:
+    """聚合输出：事实 -> 节拍 -> 定稿三层最终计划。"""
+
+    plan_id: str
+    title: str = ""
+    events: List[EventGroundingEntry] = field(default_factory=list)
+    beats: List[BeatWindowCandidate] = field(default_factory=list)
+    sentences: List[NarrationSentence] = field(default_factory=list)
+    style: str = "default"
+    estimated_duration_sec: int = 0
 
 
 @dataclass
